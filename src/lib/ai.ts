@@ -11,6 +11,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import type { PackContent, PackTheme } from "@/packs/types";
+import { plainText, withCue } from "./captions";
 import type { GameSecret, GameState, HostCue, SurveyRound } from "./types";
 
 // Everything AI goes through the Vercel AI Gateway: plain "provider/model"
@@ -180,7 +181,9 @@ How to be funny, not formulaic:
 - Be specific. React to the actual guess, name or team in front of you, not a generic version of the moment.
 - Have an edge. Snappy, cheeky and sharp-tongued: a wrong answer deserves a playful roast of the answer itself, a good one a smug take on it. PG-13 sass, never crude, and never about anyone's looks or identity.
 - Vary the shape. Don't open with the player's name or a stock interjection (Ah, Oh, Well, Splendid, Marvellous) every time; a line can be a question, an aside, a deadpan one-liner or a boast.
-- Never reuse a phrase, joke or opener from your recent lines.`;
+- Never reuse a phrase, joke or opener from your recent lines.
+
+You may put one short delivery cue in square brackets right before the words it colours, e.g. [scoffs], [smug], [gasps], [stage whisper] or [laughs]. One at most, and no other square brackets.`;
 
 const recentLines = (recent?: string[]) =>
   recent?.length ? `Your recent lines (don't repeat their wording, jokes or openers):\n${recent.map((l) => `- ${l}`).join("\n")}\n\n` : "";
@@ -279,7 +282,8 @@ export async function writeRecap(input: { pack: PackContent; state: GameState })
     prompt: `The game just ended after ${rounds} rounds. Final score: ${state.teams[0].name} ${state.teams[0].score}, ${state.teams[1].name} ${state.teams[1].score}. Players: ${state.players.map((p) => `${p.name} (${state.teams[p.team].name})`).join(", ")}. Some final-round guesses: ${notable || "none"}.
 Write a 2-3 sentence sign-off congratulating the winners, roasting the losers (cheekily, not cruelly), and shouting out one or two players by name, ideally for a memorable guess. Plain text only.`,
   });
-  return text.trim();
+  // Shown on screen as well as said, so no delivery cues.
+  return plainText(text);
 }
 
 // ------------------------------------------------------------ host voice
@@ -294,17 +298,24 @@ export function voiceIdFor(packId: string, voice: PackTheme["voice"]): string | 
   return perPack || process.env.AI_TTS_VOICE || voice.aiVoice || undefined;
 }
 
-/** Voice one host line. Returns encoded audio (the model's default format). */
+/**
+ * Voice one host line. Returns encoded audio (the model's default format).
+ * Fish Audio takes no instructions: it reads delivery from [cues] in the
+ * text, so every sentence gets the pack's cue unless the line has its own.
+ * Other models get the plain line, with the delivery notes as instructions.
+ */
 export async function speakHostLine(
   text: string,
   voice: PackTheme["voice"],
   opts: { packId?: string; model?: SpeechModel } = {},
 ) {
+  const model = opts.model ?? gateway.speech(TTS_MODEL);
+  const cues = (typeof model === "string" ? model : model.modelId).startsWith("fish-audio/");
   const { audio } = await generateSpeech({
-    model: opts.model ?? gateway.speech(TTS_MODEL),
-    text,
+    model,
+    text: cues ? withCue(text, voice.cue) : plainText(text),
     voice: voiceIdFor(opts.packId ?? "", voice),
-    instructions: voice.style,
+    instructions: cues ? undefined : voice.style,
     maxRetries: 1,
     abortSignal: AbortSignal.timeout(15_000),
   });

@@ -20,6 +20,7 @@ export const harryPotterTheme: PackTheme = {
   voice: {
     style:
       "Gilderoy Lockhart hosting a game show: a flamboyant, self-adoring celebrity wizard with polished, plummy British charm and a dazzling smile you can hear. Quick and snappy, dripping with smug sarcasm on wrong answers, purring with self-congratulation on right ones. Milks every reveal: a dramatic pause after \"Survey says…\".",
+    cue: "smug, theatrical British showman",
     lang: "en-GB",
     rate: 1.02,
     pitch: 0.95,

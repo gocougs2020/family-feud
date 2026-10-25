@@ -50,8 +50,23 @@ function breakLong(sentence: string): string[] {
   return [...breakLong(sentence.slice(0, best).trim()), ...breakLong(sentence.slice(best + 1).trim())];
 }
 
+/** Inline delivery cues for the voice, e.g. "[scoffs]": never shown, and never read out as words. */
+const CUE = /\[[^\]]*\]/g;
+
+/** A host line as it's shown, or said by a voice that doesn't read cues. */
+export function plainText(text: string): string {
+  return text.replace(CUE, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Give every sentence a delivery cue, unless the host already wrote one for it. */
+export function withCue(text: string, cue: string): string {
+  return sentences(text.replace(/\s+/g, " ").trim())
+    .map((s) => (s.startsWith("[") ? s : `[${cue}] ${s}`))
+    .join(" ");
+}
+
 export function splitCaptions(text: string): string[] {
-  const pieces = sentences(text.replace(/\s+/g, " ").trim()).flatMap(breakLong);
+  const pieces = sentences(plainText(text)).flatMap(breakLong);
   const out: string[] = [];
   let carry = "";
   for (let piece of pieces) {

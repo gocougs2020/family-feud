@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { captionAt, estimateSpeechMs, splitCaptions } from "./captions";
+import { captionAt, estimateSpeechMs, plainText, splitCaptions, withCue } from "./captions";
+
+describe("delivery cues", () => {
+  it("are never shown", () => {
+    expect(plainText("Logan says toad. [dramatic pause] Survey says…")).toBe("Logan says toad. Survey says…");
+    expect(splitCaptions("[scoffs] A toad? Really.")).toEqual(["A toad? Really."]);
+  });
+
+  it("go before every sentence that doesn't have its own", () => {
+    expect(withCue("A toad. [gasps] Really? Fine.", "smug")).toBe("[smug] A toad. [gasps] Really? [smug] Fine.");
+  });
+});
 
 describe("splitCaptions", () => {
   it("shows a sentence at a time", () => {

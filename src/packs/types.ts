@@ -17,8 +17,13 @@ export interface PackTheme {
   scene: "great-hall" | "studio";
   music: "mystic-waltz" | "game-show";
   voice: {
-    /** delivery notes for the AI voice (fish-audio/drama-3 via AI Gateway) */
+    /** delivery notes, for speech models that take instructions */
     style: string;
+    /**
+     * a short delivery cue, for speech models that read cues inline instead
+     * (Fish Audio): put in square brackets before each sentence
+     */
+    cue: string;
     /** optional provider voice id; leave unset for the model's default */
     aiVoice?: string;
     /** browser speech-synthesis fallback settings */

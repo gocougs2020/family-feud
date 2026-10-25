@@ -26,7 +26,14 @@ export const spaceTheme: PackTheme = {
   font: "anton",            // "cinzel" (storybook serif) or "anton" (game-show block)
   scene: "studio",          // "great-hall" (candles + castle) or "studio" (stage lights)
   music: "game-show",       // "mystic-waltz" or "game-show"
-  voice: { lang: "en-US", rate: 1, pitch: 1, preferNames: ["Samantha"] },
+  voice: {
+    style: "A cheesy retro sci-fi hero narrating a captain's log.", // for speech models that take instructions
+    cue: "heroic, over-the-top captain", // Fish Audio reads this inline, as [cue] before each sentence
+    lang: "en-US",
+    rate: 1,
+    pitch: 1,
+    preferNames: ["Samantha"],
+  },
   colors: { /* bg, tile, accent, strike... see PackTheme */ },
   teams: [[{ name: "Rockets", color: "#ff5a36" }, { name: "Comets", color: "#22b8ff" }]],
   playerColors: ["#f2c230", "#ff5a36", "#22b8ff", "#7bd389"],
