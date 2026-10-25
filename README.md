@@ -4,6 +4,10 @@ A live, multiplayer, AI-hosted take on Family Feud, played the Jackbox way: the 
 
 Built on Next.js, the Vercel AI SDK and AI Gateway, and Supabase. It ships with a **Harry Potter fan pack** ("The Wizarding Feud"), a **Classic** pack, and an **Any Topic** mode where the AI writes a survey about whatever you type.
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgocougs2020%2Ffamily-feud&project-name=family-feud&repository-name=family-feud&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22supabase%22%2C%22productSlug%22%3A%22supabase%22%2C%22protocol%22%3A%22storage%22%7D%5D)
+
+**Live demo:** https://family-feud-self.vercel.app
+
 > Fan-made party game. Not affiliated with or endorsed by Family Feud / Fremantle, J.K. Rowling, Warner Bros. or Wizarding World. The packs contain no official art, music or logos. All visuals and music are generated in code.
 
 ## What's in the box
@@ -41,20 +45,38 @@ To turn on the AI host locally, add an AI Gateway key to `.env.local` (see [`.en
 AI_GATEWAY_API_KEY=your_key
 ```
 
-## Deploy to Vercel
+## Deploy your own (free)
 
-1. **Import the repo** into Vercel.
-2. **Add Supabase** from the Vercel Marketplace (Storage → Supabase). It creates a project on the free tier and adds the env vars (`NEXT_PUBLIC_SUPABASE_URL`, the anon/publishable key, the service-role/secret key) to your Vercel project.
-3. **Create the tables.** Run [`supabase/migrations/20261024000000_init.sql`](supabase/migrations/20261024000000_init.sql) in the Supabase SQL editor, or run `supabase db push` with the Supabase CLI.
-4. **Enable AI.** Turn on AI Gateway for the team. Deployed functions authenticate to it automatically with OIDC, so no API key is needed.
-5. Optionally set `SESSION_SECRET` to a long random string. If it's unset, the Supabase secret key is used to sign seat tokens.
-6. Deploy, open the site on a TV or laptop, and create a game.
+Click **Deploy with Vercel** above. In about two minutes you'll have your own copy, with nothing to configure by hand:
 
-The memory store only works within one Node process, so a deployment needs Supabase. The home page footer shows which sync mode and AI mode are active.
+1. Vercel copies the repo to your GitHub account and creates the project.
+2. It asks you to **add Supabase**. Choose the **Free** plan. This creates the database and sets all the environment variables (Supabase URL, keys and Postgres connection strings).
+3. The build runs `scripts/migrate.mjs`, which creates the tables automatically. There's no SQL to paste.
+4. The AI host works out of the box: Vercel deployments authenticate to the AI Gateway on their own (OIDC), so there's no API key. Usage comes out of your team's AI Gateway credits.
 
-### Why Supabase rather than Neon?
+Then open the site on a TV or laptop and create a game. The home page footer shows whether sync is "Supabase Realtime" and whether the AI host is on.
 
-Both have generous free Postgres tiers, but this app needs **real-time push** to every phone. Supabase includes Realtime on the free plan (up to 200 concurrent connections), so a single free service covers both the database and live sync. With Neon you would also need a realtime service such as Pusher or Ably, or have every phone poll. For a party game with a handful of rooms, Supabase's free tier is effectively $0.
+<details>
+<summary>Already have a Supabase project, or deploying by hand?</summary>
+
+Set these on your Vercel project (Production and Preview), then redeploy:
+
+| Variable | Where to find it (Supabase dashboard) |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Project Settings → API → Project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Project Settings → API Keys → publishable (or legacy `anon`) key |
+| `SUPABASE_SECRET_KEY` | Project Settings → API Keys → secret (or legacy `service_role`) key |
+| `POSTGRES_URL_NON_POOLING` | Connect → Session pooler connection string (used only to run migrations at build time) |
+| `SESSION_SECRET` *(optional)* | Any long random string. It defaults to the Supabase secret key. |
+
+Without `POSTGRES_URL_NON_POOLING`, run [`supabase/migrations/20261024000000_init.sql`](supabase/migrations/20261024000000_init.sql) once in the SQL editor instead. You can also run migrations from your machine with `pnpm db:migrate`.
+</details>
+
+Without a database, a deployment falls back to in-memory games. That only works inside one server process, so the home page shows a warning until Supabase is connected.
+
+### Why Supabase?
+
+The game needs a database **and** real-time push to every phone. Supabase's free plan includes both: Postgres plus Realtime with up to 200 concurrent connections. It's also on the Vercel Marketplace, so the Deploy button can provision it. Free Postgres options like Neon or Turso would need a second service for real-time (Pusher, Ably, Liveblocks), or every phone polling the server. For a party game that hosts a few rooms, Supabase's free tier costs $0.
 
 One thing to know: free Supabase projects **pause after a week of inactivity**. Un-pause from the dashboard before game night, or upgrade if you host often.
 
@@ -109,7 +131,8 @@ A pack is two files: a client-safe **theme** (name, colors, fonts, 3D scene, mus
 | `pnpm test` | Run engine and matcher unit tests (Vitest) |
 | `pnpm typecheck` | TypeScript check |
 | `pnpm lint` | ESLint |
-| `pnpm build` | Production build |
+| `pnpm build` | Apply database migrations (if a database URL is set), then a production build |
+| `pnpm db:migrate` | Apply `supabase/migrations/*.sql` to the database in `POSTGRES_URL_NON_POOLING` / `DATABASE_URL` |
 
 ## Ideas and contributions welcome
 
