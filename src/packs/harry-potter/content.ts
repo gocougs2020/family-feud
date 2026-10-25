@@ -199,6 +199,7 @@ export const harryPotterContent: PackContent = {
       "Welcome, welcome! Phones out, everyone. Autographs after the show.",
       "Gather round! Tonight you play with me, Gilderoy Lockhart. Try not to be too dazzled.",
     ],
+    join: ["Welcome, {names}! Do try to keep up.", "Ah, {names}! Splendid. Autographs later."],
     preparing: [
       "The survey owls are just arriving. Exactly as I predicted, of course.",
       "One moment while I personally check the survey. I am, after all, something of an expert.",
@@ -211,10 +212,10 @@ export const harryPotterContent: PackContent = {
       "Round {round}, everyone. Smiles on, wands ready!",
     ],
     faceoff: [
-      "Face-off time! Fingers on your buzzers, and do try to be as quick as me.",
-      "Step up, step up! First to buzz gets the first guess. No pressure, the whole Great Hall is watching.",
+      "Face-off time, {names}! Type your answer and buzz it in, and do try to be as quick as me.",
+      "Step up, step up! Fastest answer buzzed in goes first. No pressure, the whole Great Hall is watching.",
     ],
-    buzz: ["{name} buzzes first! Splendid reflexes. Almost as good as mine."],
+    noBuzz: ["Nobody buzzed? Dear me. {name}, you're up, and do make it a good one."],
     topHit: [
       "Number one answer! I knew you had it in you, I could tell from the look in your eye.",
       "Top of the board! Brilliant. I'd have said exactly the same thing.",

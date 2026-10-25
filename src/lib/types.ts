@@ -114,6 +114,24 @@ export interface GameEvent {
   strikes?: number;
 }
 
+/**
+ * What prompted a host line, so the AI can write it fresh (falling back to the
+ * pack's canned line). `tail` is spoken verbatim after it, e.g. the question.
+ */
+export interface HostCue {
+  key: string;
+  vars: Record<string, string | number>;
+  tail?: string;
+}
+
+export interface HostLine {
+  id: string;
+  text: string;
+  /** being written by the AI; screens wait for the final text */
+  pending?: boolean;
+  cue?: HostCue;
+}
+
 export interface GameSettings {
   rounds: number;
   answerSeconds: number;
@@ -142,7 +160,9 @@ export interface GameState {
   /** rotation pointer per team, so every player gets a go */
   rotation: [number, number];
   event: GameEvent | null;
-  hostLine: { id: string; text: string } | null;
+  hostLine: HostLine | null;
+  /** the host's last few lines, so the AI doesn't repeat itself */
+  hostLog?: string[];
   recap?: string;
   winner?: TeamIndex | "tie";
 }

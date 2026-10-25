@@ -129,6 +129,39 @@ describe("engine", () => {
     expect(s.turn).toMatchObject({ kind: "faceoff_answer", playerIds: ["draco"], deadline: ctx.now + TIMERS.faceoffReply });
   });
 
+  it("greets everyone who just joined, in one line", () => {
+    const ctx = makeCtx();
+    const s = lobby(ctx);
+    expect(s.hostLine?.cue).toMatchObject({ key: "join", vars: { names: "Harry, Draco, Ron and Pansy" } });
+    ctx.advance(60_000);
+    const later = addPlayer(s, { id: "luna", name: "Luna", color: "#fff" }, ctx);
+    expect(later.hostLine?.cue?.vars.names).toBe("Luna");
+  });
+
+  it("reads the question out and holds the intro until the host is done", () => {
+    const ctx = makeCtx();
+    const long = { ...secret, gameIntro: "Welcome! ".repeat(40).trim() };
+    const s = startGame(surveyReady(lobby(ctx), long, ctx), long, ctx);
+    expect(s.hostLine?.text.endsWith(long.rounds[0].question)).toBe(true);
+    expect(s.hostLine?.cue).toBeUndefined(); // already AI-written
+    expect(s.deadline! - ctx.now).toBeGreaterThan(TIMERS.roundIntro + 4_000);
+
+    // A built-in survey uses the canned intro, cued for the AI, with the question as its tail.
+    const canned = startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx);
+    expect(canned.hostLine?.cue).toMatchObject({ key: "gameIntro", tail: secret.rounds[0].question });
+  });
+
+  it("leaves the buzz to the reaction and cues a line when nobody buzzes", () => {
+    const ctx = makeCtx();
+    let s = tick(startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx), secret, ctx, true)!;
+    expect(s.hostLine?.cue).toMatchObject({ key: "faceoff", vars: { names: "Harry and Draco" } });
+    const buzzed = buzz(s, "harry", s.turn!.id, "robes", ctx);
+    expect(buzzed.hostLine).toBe(s.hostLine);
+    ctx.advance(TIMERS.buzz);
+    s = tick(s, secret, ctx)!;
+    expect(s.hostLine?.cue).toMatchObject({ key: "noBuzz", vars: { name: "Harry" } });
+  });
+
   it("ends the game after the last round", () => {
     const ctx = makeCtx();
     let s = surveyReady(lobby(ctx), secret, ctx);

@@ -151,14 +151,22 @@ export function HostScreen({ code }: { code: string }) {
     return () => timers.forEach(clearTimeout);
   }, [roundEndKey, autoReveals]);
 
-  // The host speaks every new line (or, with the voice off, captions it on a clock).
+  // The host speaks every new line (or, with the voice off, captions it on a
+  // clock). A line the AI is still writing waits, unless it takes too long.
   const lastLine = useRef<string | null>(null);
+  const lineId = state?.hostLine?.id;
+  const lineText = state?.hostLine?.text;
+  const linePending = !!state?.hostLine?.pending;
   useEffect(() => {
-    const line = state?.hostLine;
-    if (!line || line.id === lastLine.current) return;
-    lastLine.current = line.id;
-    speakLine(line, !onAir || !prefs.voice);
-  }, [state?.hostLine, onAir, prefs.voice, speakLine]);
+    if (!lineId || lineText == null || lineId === lastLine.current) return;
+    const speak = () => {
+      lastLine.current = lineId;
+      speakLine({ id: lineId, text: lineText }, !onAir || !prefs.voice);
+    };
+    if (!linePending) return speak();
+    const t = setTimeout(speak, 5000);
+    return () => clearTimeout(t);
+  }, [lineId, lineText, linePending, onAir, prefs.voice, speakLine]);
 
   useEffect(() => {
     if (prefs.voice) return;
@@ -175,7 +183,8 @@ export function HostScreen({ code }: { code: string }) {
     audio.current.unlock();
     audio.current.setMusicOn(prefs.music);
     setOnAir(true);
-    if (prefs.voice && state?.hostLine) speakLine(state.hostLine);
+    // A line the AI is still writing gets spoken by the effect above once it's ready.
+    if (prefs.voice && state?.hostLine && !state.hostLine.pending) speakLine(state.hostLine);
     document.documentElement.requestFullscreen?.().catch(() => {});
   };
 
@@ -216,7 +225,7 @@ export function HostScreen({ code }: { code: string }) {
       <div className="tv-vignette absolute inset-0" />
       <div className="tv-scanlines absolute inset-0" />
       <TopBar state={state} theme={theme} connected={live.connected} />
-      <Chyron theme={theme} caption={caption} line={state.hostLine} />
+      <Chyron theme={theme} caption={caption} line={state.hostLine?.pending ? null : state.hostLine} />
       <HostMenu prefs={prefs} onChange={updatePrefs} isHost={!!hostToken} onAction={act} state={state} />
       <AnimatePresence>{!onAir && <OnAirCurtain theme={theme} onStart={goOnAir} />}</AnimatePresence>
     </div>

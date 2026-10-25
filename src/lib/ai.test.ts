@@ -2,19 +2,22 @@ import { MockLanguageModelV4, MockSpeechModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { harryPotterContent } from "@/packs/harry-potter/content";
 import { harryPotterTheme } from "@/packs/harry-potter/theme";
-import { judgeGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeSurvey } from "./ai";
+import { cueMoment, judgeGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeHostLine, writeSurvey } from "./ai";
 
-function mockModel(json: unknown) {
+function mockModel(json: unknown, prompts: string[] = []) {
   return new MockLanguageModelV4({
-    doGenerate: async () => ({
-      content: [{ type: "text", text: JSON.stringify(json) }],
-      finishReason: { unified: "stop", raw: undefined },
-      usage: {
-        inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
-        outputTokens: { total: 20, text: 20, reasoning: undefined },
-      },
-      warnings: [],
-    }),
+    doGenerate: async (options) => {
+      prompts.push(JSON.stringify(options.prompt));
+      return {
+        content: [{ type: "text", text: typeof json === "string" ? json : JSON.stringify(json) }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 20, text: 20, reasoning: undefined },
+        },
+        warnings: [],
+      };
+    },
   });
 }
 
@@ -85,9 +88,45 @@ describe("judgeGuess", () => {
     });
     expect(result).toEqual({ index: 1, quip: "Hiss-terical, Ron!" });
   });
+  it("tells the judge what's riding on the guess", async () => {
+    const prompts: string[] = [];
+    await judgeGuess({
+      pack: harryPotterContent,
+      round,
+      guess: "toaster",
+      playerName: "Ron",
+      moment: "A miss is their third strike.",
+      recent: ["Splendid!"],
+      model: mockModel({ index: -1, quip: "No." }, prompts),
+    });
+    expect(prompts[0]).toContain("A miss is their third strike.");
+    expect(prompts[0]).toContain("Splendid!");
+  });
   it("treats -1 or out-of-range as no match", async () => {
     const result = await judgeGuess({ pack: harryPotterContent, round, guess: "toaster", playerName: "Ron", model: mockModel({ index: 42, quip: "No." }) });
     expect(result.index).toBeNull();
+  });
+});
+
+describe("writeHostLine", () => {
+  it("writes a fresh line for the moment and tidies it for speech", async () => {
+    const prompts: string[] = [];
+    const line = await writeHostLine({
+      pack: harryPotterContent,
+      moment: cueMoment({ key: "join", vars: { joined: "Luna (Ravenclaw)", players: 3 } }),
+      facts: "Teams: Ravenclaw vs Hufflepuff.",
+      recent: ["Welcome, Harry!"],
+      model: mockModel(' "Luna! *beams* Ravenclaw are lucky to have you." ', prompts),
+    });
+    expect(line).toBe("Luna! Ravenclaw are lucky to have you.");
+    expect(prompts[0]).toContain("Luna (Ravenclaw)");
+    expect(prompts[0]).toContain("Welcome, Harry!");
+  });
+
+  it("describes every cue the engine can give", () => {
+    for (const key of Object.keys(harryPotterContent.lines)) expect(cueMoment({ key, vars: {} })).not.toBe(key);
+    expect(cueMoment({ key: "lobby", vars: { code: "ABCD" } })).toContain("A B C D");
+    expect(cueMoment({ key: "roundIntro", vars: { round: 3, rounds: 4, multiplier: 2 } })).toContain("2x points");
   });
 });
 

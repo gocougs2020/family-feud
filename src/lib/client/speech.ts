@@ -20,8 +20,12 @@ interface Hooks {
 
 /** Played a touch faster than the model's natural pace, to keep the show moving. */
 const SPEED = 1.12;
-/** A line this close to finishing gets to finish before the next one starts. */
-const TAIL_MS = 1600;
+/**
+ * A line this close to finishing gets to finish before the next one starts;
+ * a longer one fades out rather than stopping dead.
+ */
+const WAIT_MS = 4000;
+const FADE_MS = 350;
 
 function chooseVoice(cfg: Voice): SpeechSynthesisVoice | null {
   const voices = window.speechSynthesis?.getVoices() ?? [];
@@ -37,10 +41,12 @@ export class HostVoice {
   private request: AbortController | null = null;
   private url: string | null = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
+  /** when the browser voice should finish the current line (estimated) */
+  private speechEndsAt = 0;
   /** bumped by every new line, so stale async work can tell it lost */
   private generation = 0;
-  /** set false after the AI voice fails, so we stop retrying every line */
-  private aiWorks = true;
+  /** AI voice failures in a row; after a few we stop retrying every line */
+  private aiFailures = 0;
 
   constructor(private code: string) {}
 
@@ -50,7 +56,7 @@ export class HostVoice {
     this.request?.abort();
     this.request = null;
 
-    if (!opts.silent && opts.ai && opts.token && this.aiWorks) {
+    if (!opts.silent && opts.ai && opts.token && this.aiFailures < 3) {
       const controller = new AbortController();
       this.request = controller;
       const timeout = setTimeout(() => controller.abort(), 9_000);
@@ -64,20 +70,23 @@ export class HostVoice {
         if (res.status === 409 || gen !== this.generation) return; // a newer line took over
         if (!res.ok) throw new Error(`voice ${res.status}`);
         const blob = await res.blob();
-        await this.finishTail();
+        this.aiFailures = 0;
+        await this.handOff();
         if (gen !== this.generation) return;
         this.stopPlayback();
         this.playClip(line, URL.createObjectURL(blob), opts);
         return;
       } catch (err) {
         if (gen !== this.generation) return;
-        if (!(err instanceof DOMException && err.name === "AbortError")) this.aiWorks = false;
+        this.aiFailures++;
         console.warn("[feud] AI voice unavailable, using browser speech", err);
       } finally {
         clearTimeout(timeout);
       }
     }
 
+    if (!opts.silent) await this.handOff();
+    if (gen !== this.generation) return;
     this.stopPlayback();
     const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
     if (opts.silent || !synth || !line.text) this.runClock(line, estimateSpeechMs(line.text, SPEED), opts);
@@ -138,6 +147,7 @@ export class HostVoice {
       if (!current()) return;
       hooks.onStart?.();
       const startedAt = Date.now();
+      this.speechEndsAt = startedAt + estimate;
       this.tick(() =>
         hooks.onProgress?.(line, spokenTo >= 0 ? spokenTo / line.text.length : (Date.now() - startedAt) / estimate),
       );
@@ -171,21 +181,27 @@ export class HostVoice {
     });
   }
 
-  /** If the current clip is nearly done, let it finish rather than cut it off. */
-  private finishTail(): Promise<void> {
+  /**
+   * Make room for the next line: let the current one finish if it's nearly
+   * done, otherwise fade it out, so the host never stops mid-word.
+   */
+  private async handOff(): Promise<void> {
     const audio = this.audio;
-    if (!audio || audio.paused || audio.ended || !Number.isFinite(audio.duration)) return Promise.resolve();
-    const left = ((audio.duration - audio.currentTime) / audio.playbackRate) * 1000;
-    if (left > TAIL_MS) return Promise.resolve();
-    return new Promise((resolve) => {
-      const done = () => {
-        clearTimeout(timer);
-        audio.removeEventListener("ended", done);
-        resolve();
-      };
-      const timer = setTimeout(done, left + 250);
-      audio.addEventListener("ended", done);
-    });
+    if (audio && !audio.paused && !audio.ended) {
+      const left = Number.isFinite(audio.duration)
+        ? ((audio.duration - audio.currentTime) / audio.playbackRate) * 1000
+        : Infinity;
+      if (left <= WAIT_MS) return until(() => audio.ended || audio.paused, left + 250);
+      const from = audio.volume;
+      const started = Date.now();
+      return until(() => {
+        audio.volume = from * Math.max(0, 1 - (Date.now() - started) / FADE_MS);
+        return audio.volume === 0;
+      }, FADE_MS + 100);
+    }
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+    const left = this.speechEndsAt - Date.now();
+    if (synth?.speaking && left <= WAIT_MS) await until(() => !synth.speaking, Math.max(0, left) + 1500);
   }
 
   private tick(fn: () => void) {
@@ -211,4 +227,13 @@ export class HostVoice {
     }
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
   }
+}
+
+/** Resolve once `done()` is true (checked every 50ms), or after `ms` regardless. */
+function until(done: () => boolean, ms: number): Promise<void> {
+  const deadline = Date.now() + ms;
+  return new Promise((resolve) => {
+    const check = () => (done() || Date.now() >= deadline ? resolve() : setTimeout(check, 50));
+    check();
+  });
 }
