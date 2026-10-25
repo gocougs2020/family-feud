@@ -61,12 +61,16 @@ export function HostScreen({ code }: { code: string }) {
     [code, hostToken, apply],
   );
 
-  // The line the game is waiting on (a held turn, or a round's intro): once the host has said it, the game moves on.
+  // The line the game is waiting on (a held turn, a guess being read out, or a round's intro): once the host has said it, the game moves on.
   const waitingOn = useRef<string | undefined>(undefined);
-  const waitingFor = state?.turn?.heldFor ?? (state?.phase === "round_intro" ? state.hostLine?.id : undefined);
+  const judging = state?.turn?.judging;
+  const announcing = judging?.saidAt == null ? judging?.lineId : undefined;
+  const waitingFor = state?.turn?.heldFor ?? announcing ?? (state?.phase === "round_intro" ? state.hostLine?.id : undefined);
+  const announcingRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     waitingOn.current = waitingFor;
-  }, [waitingFor]);
+    announcingRef.current = announcing;
+  }, [waitingFor, announcing]);
 
   const speakLine = useCallback(
     (line: { id: string; text: string }, silent = false) => {
@@ -78,6 +82,8 @@ export function HostScreen({ code }: { code: string }) {
         onStart: () => audio.current?.duck(true),
         onEnd: () => audio.current?.duck(false),
         onDone: (done) => {
+          // "…Survey says…" gets its drum roll, then the reveal.
+          if (done.id === announcingRef.current) audio.current?.play("drumroll");
           if (hostToken && done.id === waitingOn.current) void act("line_done", { lineId: done.id });
         },
         onProgress: (spoken, fraction) =>
@@ -142,7 +148,6 @@ export function HostScreen({ code }: { code: string }) {
       round_start: "sting",
       question: "whoosh",
       buzz: "buzz",
-      judging: "drumroll",
       miss: "strike",
       dupe: "strike",
       timeout: "strike",
@@ -152,11 +157,6 @@ export function HostScreen({ code }: { code: string }) {
     };
     if (ev.kind === "hit" || ev.kind === "steal_hit") audio.current.play(ev.answerIndex === 0 ? "top" : "reveal");
     else if (sfx[ev.kind]) audio.current.play(sfx[ev.kind]!);
-    // A face-off buzz arrives with its answer already locked in.
-    if (ev.kind === "buzz" && ev.text) {
-      const t = setTimeout(() => audio.current?.play("drumroll"), 700);
-      return () => clearTimeout(t);
-    }
     if (["miss", "dupe", "timeout", "steal_miss"].includes(ev.kind)) {
       shaker.current?.animate(
         [

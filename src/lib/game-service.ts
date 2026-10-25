@@ -29,9 +29,11 @@ import {
   surveyReady,
   teamPlayers,
   tick,
+  TIMERS,
   withHostLine,
   type EngineCtx,
 } from "./engine";
+import { estimateSpeechMs } from "./captions";
 import { localMatch } from "./match";
 import { getStore } from "./store";
 import type { GameSecret, GameState, StoredGame, TeamIndex, TeamPreset, Turn } from "./types";
@@ -326,7 +328,7 @@ export async function performAction(code: string, seat: Seat | null, action: Act
     case "buzz": {
       const playerId = requirePlayer(seat, game.state);
       const text = String(action.text ?? "");
-      result = await judgeAnswer(id, playerId, (s, ctx) => buzz(s, playerId, action.turnId, text, ctx), 2200);
+      result = await judgeAnswer(id, playerId, (s, ctx) => buzz(s, playerId, action.turnId, text, ctx));
       break;
     }
     case "play_pass": {
@@ -432,22 +434,34 @@ function describeStakes(state: GameState, turn: Turn, name: string): string {
 }
 
 /**
- * Lock the guess (a plain answer, or a face-off buzz that carries one), judge
- * it (locally, then with the AI judge), have the host react, and apply the
- * result. A buzz gets a slightly
- * longer beat so the buzzer and drum roll can land first.
+ * Wait until the TV has read out the guess being judged ("Harry says robes.
+ * Survey says…"), or until it should have, then give the drum roll its beat.
  */
-async function judgeAnswer(
-  id: string,
-  playerId: string,
-  lock: (state: GameState, ctx: EngineCtx) => GameState,
-  beat = 1800,
-) {
+async function awaitSurveySays(id: string, turnId: string, giveUpAt: number) {
+  const store = getStore();
+  while (Date.now() < giveUpAt) {
+    const turn = (await store.getById(id))?.state.turn;
+    if (turn?.id !== turnId || turn.judging?.saidAt != null) break;
+    await sleep(200);
+  }
+  await sleep(TIMERS.surveySays);
+}
+
+/**
+ * Lock the guess (a plain answer, or a face-off buzz that carries one), which
+ * has the host read it out. Meanwhile judge it (locally, then with the AI
+ * judge) and write the host's reaction, then reveal the result once the host
+ * has said "Survey says…".
+ */
+async function judgeAnswer(id: string, playerId: string, lock: (state: GameState, ctx: EngineCtx) => GameState) {
   const store = getStore();
   const marked = await mutateGame(id, lock);
   const startedAt = Date.now();
-  const secret = await store.getSecret(id);
   const state = marked.state;
+  const announcement = state.hostLine?.text ?? "";
+  // The TV asks for this clip any moment now; get it started first.
+  if (aiEnabled() && announcement) void warmVoice(state.packId, announcement);
+  const secret = await store.getSecret(id);
   const turn = state.turn;
   const clean = turn?.judging?.text ?? "";
   if (!secret || !state.round || !turn) throw new GameError("The survey isn't ready yet", 409);
@@ -470,13 +484,13 @@ async function judgeAnswer(
     try {
       const result =
         index == null
-          ? `"${clean}" isn't on the board.`
+          ? `"${clean}" isn't on the board. Have fun with how wrong it is.`
           : state.round.board[index].revealed
-            ? `"${clean}" is already on the board, so it counts as a miss.`
+            ? `"${clean}" is already on the board, so it counts as a miss. Rib them for not looking at the board.`
             : `"${clean}" matches the number ${index + 1} answer, ${survey.answers[index].text}, worth ${survey.answers[index].points}.`;
       quip = await writeHostLine({
         pack,
-        moment: `${moment}\nResult: ${result} React to the guess as it's revealed and say what happens next.`,
+        moment: `${moment}\nYou've just said "${announcement}" and the board is revealing the result. Result: ${result}\nReact to it and say what happens next. Don't repeat the guess announcement or say "survey says" again.`,
         facts: describeGame(state),
         recent: state.hostLog,
       });
@@ -487,8 +501,8 @@ async function judgeAnswer(
     if (quip) void warmVoice(state.packId, quip);
   }
 
-  // Give the TV a beat for "Survey says…".
-  await sleep(Math.max(0, beat - (Date.now() - startedAt)));
+  // Reveal once the host has said "Survey says…" (allowing for fetching the voice).
+  await awaitSurveySays(id, turnId, startedAt + estimateSpeechMs(announcement) + TIMERS.voiceLead);
   let finished = false;
   const result = await mutateGame(id, (s, ctx) => {
     if (s.turn?.id !== turnId) return null; // timed out or skipped meanwhile

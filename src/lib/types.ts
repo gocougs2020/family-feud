@@ -71,8 +71,12 @@ export interface Turn {
    */
   opensAt?: number;
   heldFor?: string;
-  /** set while a submitted guess is being judged */
-  judging?: { playerId: string; text: string };
+  /**
+   * Set while a submitted guess is being judged. `lineId` is the host reading
+   * it out ("Harry says robes. Survey says…"); `saidAt` is when the TV
+   * finished saying it, so the reveal can follow it.
+   */
+  judging?: { playerId: string; text: string; lineId?: string; saidAt?: number };
 }
 
 export interface FaceoffState {

@@ -42,6 +42,8 @@ import type { PackContent } from "../types";
 export const spaceContent: PackContent = {
   id: "space",
   hostPersona: "Captain Nova, a cheesy retro sci-fi hero who narrates everything like a captain's log.",
+  // optional: comic angles, one sampled per AI host line so the jokes stay varied
+  hostRiffs: ["a captain's log entry", "blame it on the aliens", "a terrible space pun"],
   audience: "100 astronauts",
   aiGuidance: "Write Family Feud survey questions about space, astronauts and sci-fi. Keep them guessable.",
   angles: ["life on the space station", "aliens", "planets", "rocket launches", "space food"],

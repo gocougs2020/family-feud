@@ -84,6 +84,8 @@ export interface PackContent {
   id: string;
   /** who the host is and how they talk, for the AI */
   hostPersona: string;
+  /** comic angles, one sampled per AI host line so the jokes don't settle into a rut */
+  hostRiffs?: string[];
   /** who was "surveyed" */
   audience: string;
   /** guidance for writing questions */

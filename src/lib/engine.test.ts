@@ -210,7 +210,7 @@ describe("engine", () => {
     const ctx = makeCtx();
     const s = faceoff(startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx), ctx);
     const buzzed = buzz(s, "draco", s.turn!.id, "robes", ctx);
-    // Locking in a buzz starts a judging turn with no new line: nothing to wait for.
+    // Locking in a buzz starts a judging turn: the host reads the guess out, but nobody waits to act on it.
     expect(holdNewTurn(s, buzzed, ctx.now)).toBe(buzzed);
     const reacted = resolveGuess(buzzed, secret, { turnId: buzzed.turn!.id, playerId: "draco", text: "robes", answerIndex: 1 }, ctx);
     const held = holdNewTurn(buzzed, reacted, ctx.now);
@@ -236,13 +236,20 @@ describe("engine", () => {
     expect(closeReason(closed, s.createdAt + TIMERS.session)).toBeNull();
   });
 
-  it("leaves the buzz to the reaction and cues a line when nobody buzzes", () => {
+  it("reads out a locked-in guess, notes when it's been said, and cues a line when nobody buzzes", () => {
     const ctx = makeCtx();
     let s = tick(startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx), secret, ctx, true)!;
     expect(s.hostLine?.cue).toMatchObject({ key: "faceoff", vars: { names: "Harry and Draco" } });
     s = lineDone(s, secret, s.turn!.heldFor!, ctx)!;
-    const buzzed = buzz(s, "harry", s.turn!.id, "robes", ctx);
-    expect(buzzed.hostLine).toBe(s.hostLine);
+    const buzzed = buzz(s, "harry", s.turn!.id, " robes ", ctx);
+    // Read verbatim, never rewritten by the AI.
+    expect(buzzed.hostLine?.text).toBe("Harry says robes. Survey says…");
+    expect(buzzed.hostLine?.cue).toBeUndefined();
+    expect(buzzed.turn?.judging).toEqual({ playerId: "harry", text: "robes", lineId: buzzed.hostLine!.id });
+    ctx.advance(2_000);
+    const said = lineDone(buzzed, secret, buzzed.hostLine!.id, ctx)!;
+    expect(said.turn?.judging?.saidAt).toBe(ctx.now);
+    expect(lineDone(said, secret, buzzed.hostLine!.id, ctx)).toBeNull();
     ctx.advance(TIMERS.buzz);
     s = tick(s, secret, ctx)!;
     expect(s.hostLine?.cue).toMatchObject({ key: "noBuzz", vars: { name: "Harry" } });
