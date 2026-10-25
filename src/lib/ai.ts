@@ -14,7 +14,9 @@ const TTS_MODEL = process.env.AI_TTS_MODEL ?? "fish-audio/drama-3";
 
 export function aiEnabled(): boolean {
   if (process.env.AI_DISABLED === "1") return false;
-  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+  // On Vercel the gateway authenticates with the per-request OIDC token, which
+  // isn't always exposed as an env var at runtime, so being on Vercel is enough.
+  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
 }
 
 function shuffle<T>(items: T[]): T[] {
