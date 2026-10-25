@@ -1,0 +1,132 @@
+import type { HostLines, PackContent } from "../types";
+
+const lines: HostLines = {
+  lobby: ["Come on down! Grab your phone and join the game."],
+  preparing: ["Hang tight — we're tallying the survey results!"],
+  gameIntro: ["Welcome to Family Feud! Tonight it's {team} against {other}!"],
+  roundIntro: ["Round {round}! We surveyed 100 people, top answers are on the board..."],
+  faceoff: ["Let's play the face-off! Hands on your buzzers."],
+  buzz: ["{name} buzzed in first!"],
+  topHit: ["Number one answer! Fantastic!"],
+  hit: ["Good answer! Good answer!", "Survey says... there it is! {answer}!", "That's on the board!"],
+  miss: ["Ohhh, survey says no.", "Not up there, {name}.", "Strike!"],
+  dupe: ["We already have that one! Strike."],
+  timeout: ["Ooh, out of time!"],
+  control: ["{team} are going to play!", "{team} have control!"],
+  strikeOut: ["Three strikes! {other}, huddle up — you can steal!"],
+  stealHit: ["{team} steal it! What a play!"],
+  stealMiss: ["No steal! {team} hang on to the points."],
+  roundWon: ["{team} take the round and {points} points!"],
+  sweep: ["They cleared the board! {points} points to {team}!"],
+  gameOver: ["That's our game! Congratulations, {team}!"],
+  tie: ["It's a tie! Can you believe it?"],
+};
+
+export const classicContent: PackContent = {
+  id: "classic",
+  hostPersona:
+    "Danny Delgado, an upbeat, quick-witted American game show host. Big energy, playful teasing, loves a good groan-worthy pun.",
+  audience: "100 people",
+  aiGuidance:
+    "Write classic Family Feud survey questions about everyday life: home, work, food, relationships, holidays, pop culture. Keep them family friendly, relatable and guessable.",
+  angles: [
+    "morning routines",
+    "food and restaurants",
+    "the workplace",
+    "holidays",
+    "vacations",
+    "school days",
+    "dating and weddings",
+    "pets",
+    "household chores",
+    "TV and movies",
+    "sports",
+    "shopping",
+    "childhood",
+    "the weekend",
+    "cars and driving",
+  ],
+  fallbackRounds: [
+    {
+      question: "Name something people do right before they go to sleep.",
+      answers: [
+        { text: "Brush Teeth", points: 34, aliases: ["brush my teeth", "teeth"] },
+        { text: "Check Phone", points: 22, aliases: ["scroll", "phone", "social media", "doomscroll"] },
+        { text: "Read", points: 14, aliases: ["read a book", "book"] },
+        { text: "Watch TV", points: 11, aliases: ["tv", "netflix"] },
+        { text: "Pray", points: 7, aliases: ["prayers"] },
+        { text: "Set an Alarm", points: 6, aliases: ["alarm"] },
+        { text: "Use the Bathroom", points: 4, aliases: ["pee", "toilet", "bathroom"] },
+      ],
+    },
+    {
+      question: "Name a food that's messy to eat on a first date.",
+      answers: [
+        { text: "Spaghetti", points: 36, aliases: ["pasta", "noodles"] },
+        { text: "Ribs", points: 18, aliases: ["bbq", "barbecue"] },
+        { text: "Burger", points: 13, aliases: ["hamburger", "burgers"] },
+        { text: "Wings", points: 11, aliases: ["chicken wings"] },
+        { text: "Tacos", points: 9, aliases: ["taco"] },
+        { text: "Crab", points: 6, aliases: ["lobster", "seafood"] },
+      ],
+    },
+    {
+      question: "Name something you'd hate to forget when going on vacation.",
+      answers: [
+        { text: "Passport", points: 30, aliases: ["id", "license"] },
+        { text: "Phone Charger", points: 20, aliases: ["charger"] },
+        { text: "Toothbrush", points: 14, aliases: ["toiletries"] },
+        { text: "Medication", points: 12, aliases: ["medicine", "pills", "meds"] },
+        { text: "Underwear", points: 10, aliases: ["clothes", "socks"] },
+        { text: "Wallet", points: 7, aliases: ["money", "credit card", "cash"] },
+        { text: "Sunscreen", points: 4, aliases: ["sunblock"] },
+      ],
+    },
+    {
+      question: "Name something people do when they're bored at work.",
+      answers: [
+        { text: "Browse the Internet", points: 30, aliases: ["internet", "surf the web", "online shopping"] },
+        { text: "Check Phone", points: 25, aliases: ["phone", "social media"] },
+        { text: "Snack", points: 14, aliases: ["eat", "get coffee", "coffee"] },
+        { text: "Chat With Coworkers", points: 12, aliases: ["gossip", "talk"] },
+        { text: "Daydream", points: 8, aliases: ["stare out the window"] },
+        { text: "Nap", points: 6, aliases: ["sleep"] },
+      ],
+    },
+    {
+      question: "Name an animal people are afraid of.",
+      answers: [
+        { text: "Snake", points: 38, aliases: ["snakes"] },
+        { text: "Spider", points: 24, aliases: ["spiders"] },
+        { text: "Shark", points: 14, aliases: ["sharks"] },
+        { text: "Bear", points: 9, aliases: ["bears"] },
+        { text: "Rat", points: 7, aliases: ["mouse", "mice", "rats"] },
+        { text: "Dog", points: 5, aliases: ["dogs", "pit bull"] },
+      ],
+    },
+    {
+      question: "Name something you see at a wedding.",
+      answers: [
+        { text: "Bride", points: 28, aliases: ["wedding dress", "dress"] },
+        { text: "Cake", points: 24, aliases: ["wedding cake"] },
+        { text: "Flowers", points: 15, aliases: ["bouquet"] },
+        { text: "Rings", points: 13, aliases: ["ring"] },
+        { text: "Groom", points: 9, aliases: ["tuxedo"] },
+        { text: "Dancing", points: 6, aliases: ["dance floor", "dj"] },
+        { text: "Crying", points: 3, aliases: ["tears"] },
+      ],
+    },
+    {
+      question: "Name a chore kids try to get out of.",
+      answers: [
+        { text: "Dishes", points: 32, aliases: ["washing dishes", "dishwasher"] },
+        { text: "Cleaning Their Room", points: 28, aliases: ["clean room", "tidy room"] },
+        { text: "Taking Out Trash", points: 16, aliases: ["trash", "garbage"] },
+        { text: "Laundry", points: 10, aliases: ["folding clothes"] },
+        { text: "Mowing the Lawn", points: 8, aliases: ["mowing", "yard work"] },
+        { text: "Walking the Dog", points: 4, aliases: ["feed the dog", "pets"] },
+      ],
+    },
+  ],
+  lines,
+};

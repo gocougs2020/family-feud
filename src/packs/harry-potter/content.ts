@@ -1,0 +1,245 @@
+import type { PackContent } from "../types";
+
+// Unofficial fan content. Not affiliated with or endorsed by J.K. Rowling,
+// Warner Bros., or Wizarding World Digital.
+
+export const harryPotterContent: PackContent = {
+  id: "harry-potter",
+  hostPersona:
+    "Professor Bartholomew Quill, a flamboyant, slightly dotty Hogwarts professor moonlighting as a game show host. Warm, theatrical, British, fond of wizarding puns and gentle teasing. Never mean.",
+  audience: "100 witches and wizards",
+  aiGuidance:
+    "Write Family Feud survey questions set in the Harry Potter universe (books and films). Questions should be the kind you'd ask a crowd of witches and wizards — opinions, everyday wizarding life, and well-known canon — not obscure trivia. Answers must be things a casual fan could guess. Mix light-hearted 'Name something...' prompts with a few character-based ones.",
+  angles: [
+    "spells and charms",
+    "potions and ingredients",
+    "magical creatures",
+    "life at Hogwarts",
+    "Hogwarts teachers",
+    "Quidditch",
+    "Diagon Alley and Hogsmeade shops",
+    "wizarding sweets and food",
+    "the Weasley family",
+    "villains and the Dark Arts",
+    "magical objects and artefacts",
+    "the Ministry of Magic",
+    "Muggles from a wizard's point of view",
+    "detentions and breaking rules",
+    "the Triwizard Tournament",
+    "wands and wandlore",
+    "house elves, goblins and giants",
+    "holidays and feasts at Hogwarts",
+  ],
+  fallbackRounds: [
+    {
+      question: "Name something you'd pack in your trunk for your first year at Hogwarts.",
+      answers: [
+        { text: "Wand", points: 32, aliases: [] },
+        { text: "Robes", points: 22, aliases: ["uniform", "school robes", "clothes", "cloak"] },
+        { text: "Cauldron", points: 14, aliases: ["pewter cauldron"] },
+        { text: "Spellbooks", points: 12, aliases: ["books", "textbooks", "standard book of spells"] },
+        { text: "A Pet", points: 8, aliases: ["owl", "cat", "toad", "rat", "pet owl"] },
+        { text: "Quill & Parchment", points: 6, aliases: ["quill", "parchment", "ink", "quills"] },
+        { text: "Broomstick", points: 4, aliases: ["broom"] },
+      ],
+    },
+    {
+      question: "Name a magical creature you would NOT want to meet in a dark corridor.",
+      answers: [
+        { text: "Dementor", points: 30, aliases: ["dementors"] },
+        { text: "Basilisk", points: 22, aliases: ["giant snake", "snake", "serpent"] },
+        { text: "Giant Spider", points: 15, aliases: ["acromantula", "aragog", "spider", "spiders"] },
+        { text: "Troll", points: 12, aliases: ["mountain troll"] },
+        { text: "Werewolf", points: 9, aliases: ["lupin", "fenrir greyback", "greyback"] },
+        { text: "Dragon", points: 6, aliases: ["hungarian horntail", "horntail", "norbert"] },
+        { text: "Boggart", points: 4, aliases: [] },
+      ],
+    },
+    {
+      question: "Name the first spell you'd teach a brand-new witch or wizard.",
+      answers: [
+        { text: "Expelliarmus", points: 28, aliases: ["disarming charm", "disarm"] },
+        { text: "Lumos", points: 22, aliases: ["light", "wand lighting charm"] },
+        { text: "Wingardium Leviosa", points: 18, aliases: ["levitation charm", "levitate", "leviosa"] },
+        { text: "Accio", points: 12, aliases: ["summoning charm", "summon"] },
+        { text: "Alohomora", points: 9, aliases: ["unlocking charm", "unlock"] },
+        { text: "Expecto Patronum", points: 6, aliases: ["patronus", "patronus charm"] },
+        { text: "Protego", points: 3, aliases: ["shield charm", "shield"] },
+      ],
+    },
+    {
+      question: "Name a sweet you'd buy at Honeydukes.",
+      answers: [
+        { text: "Chocolate Frog", points: 34, aliases: ["chocolate frogs", "frogs", "chocolate"] },
+        { text: "Every Flavour Beans", points: 26, aliases: ["bertie botts", "bertie bott's every flavour beans", "jelly beans", "beans"] },
+        { text: "Sugar Quill", points: 10, aliases: ["sugar quills"] },
+        { text: "Fizzing Whizzbees", points: 9, aliases: ["whizzbees", "fizzing whizbee"] },
+        { text: "Pumpkin Pasty", points: 7, aliases: ["pumpkin pasties", "cauldron cakes", "cauldron cake"] },
+        { text: "Licorice Wand", points: 6, aliases: ["liquorice wand", "licorice wands"] },
+        { text: "Acid Pops", points: 4, aliases: ["acid pop", "lemon drops", "lemon drop"] },
+      ],
+    },
+    {
+      question: "Name a Hogwarts class students complain about the most.",
+      answers: [
+        { text: "Potions", points: 35, aliases: ["snape's class"] },
+        { text: "History of Magic", points: 20, aliases: ["binns", "history"] },
+        { text: "Divination", points: 15, aliases: ["trelawney", "fortune telling"] },
+        { text: "Defence Against the Dark Arts", points: 12, aliases: ["dada", "defense against the dark arts", "defence"] },
+        { text: "Care of Magical Creatures", points: 8, aliases: ["hagrid's class", "creatures"] },
+        { text: "Transfiguration", points: 6, aliases: ["mcgonagall's class"] },
+      ],
+    },
+    {
+      question: "Name something Ron Weasley is scared of.",
+      answers: [
+        { text: "Spiders", points: 52, aliases: ["spider", "aragog", "acromantula"] },
+        { text: "His Mum", points: 14, aliases: ["molly", "molly weasley", "his mother", "mum", "mom", "howler"] },
+        { text: "An Angry Hermione", points: 10, aliases: ["hermione"] },
+        { text: "Exams", points: 8, aliases: ["owls", "failing", "tests", "homework"] },
+        { text: "Snape", points: 6, aliases: ["professor snape"] },
+        { text: "Dementors", points: 5, aliases: ["dementor"] },
+      ],
+    },
+    {
+      question: "Name a way witches and wizards get from place to place.",
+      answers: [
+        { text: "Broomstick", points: 30, aliases: ["broom", "flying"] },
+        { text: "Floo Powder", points: 20, aliases: ["floo network", "floo", "fireplace"] },
+        { text: "Apparition", points: 18, aliases: ["apparate", "apparating", "disapparate", "teleport"] },
+        { text: "Hogwarts Express", points: 12, aliases: ["train"] },
+        { text: "Portkey", points: 9, aliases: ["portkeys"] },
+        { text: "Knight Bus", points: 6, aliases: ["bus"] },
+        { text: "Flying Car", points: 3, aliases: ["ford anglia", "car"] },
+      ],
+    },
+    {
+      question: "Name something you'd spot in Dumbledore's office.",
+      answers: [
+        { text: "Fawkes the Phoenix", points: 28, aliases: ["fawkes", "phoenix", "bird"] },
+        { text: "Sorting Hat", points: 22, aliases: ["hat"] },
+        { text: "Pensieve", points: 15, aliases: ["memories", "basin"] },
+        { text: "Portraits", points: 12, aliases: ["paintings", "portraits of headmasters", "pictures"] },
+        { text: "Sword of Gryffindor", points: 9, aliases: ["sword"] },
+        { text: "Sweets", points: 6, aliases: ["lemon drops", "sherbet lemons", "candy"] },
+        { text: "Silver Instruments", points: 4, aliases: ["gadgets", "instruments", "trinkets"] },
+      ],
+    },
+    {
+      question: "Name a reason you might land in detention at Hogwarts.",
+      answers: [
+        { text: "Out After Curfew", points: 30, aliases: ["sneaking out", "out of bed", "curfew", "wandering at night"] },
+        { text: "Fighting", points: 18, aliases: ["duelling", "dueling", "hexing someone", "jinxing"] },
+        { text: "Cheeking a Teacher", points: 14, aliases: ["talking back", "rudeness", "insulting snape", "back chat"] },
+        { text: "Forbidden Forest", points: 12, aliases: ["going in the forbidden forest", "forest"] },
+        { text: "Lying", points: 10, aliases: ["telling lies", "i must not tell lies"] },
+        { text: "Late to Class", points: 6, aliases: ["being late", "late"] },
+        { text: "Cheating", points: 5, aliases: ["copying homework"] },
+      ],
+    },
+    {
+      question: "Name a creature Hagrid would describe as 'misunderstood'.",
+      answers: [
+        { text: "Dragon", points: 30, aliases: ["norbert", "norberta", "dragons"] },
+        { text: "Giant Spider", points: 25, aliases: ["aragog", "acromantula", "spiders"] },
+        { text: "Fluffy", points: 18, aliases: ["three headed dog", "three-headed dog", "cerberus"] },
+        { text: "Blast-Ended Skrewts", points: 12, aliases: ["skrewts", "blast ended skrewt"] },
+        { text: "Hippogriff", points: 8, aliases: ["buckbeak", "witherwings"] },
+        { text: "Giants", points: 5, aliases: ["grawp", "giant"] },
+      ],
+    },
+    {
+      question: "Name something you'd see at a Quidditch match.",
+      answers: [
+        { text: "Golden Snitch", points: 32, aliases: ["snitch"] },
+        { text: "Broomsticks", points: 24, aliases: ["brooms", "broom"] },
+        { text: "Bludgers", points: 14, aliases: ["bludger"] },
+        { text: "Quaffle", points: 10, aliases: [] },
+        { text: "Goal Hoops", points: 8, aliases: ["hoops", "rings", "goals"] },
+        { text: "Madam Hooch", points: 5, aliases: ["referee", "ref"] },
+        { text: "Omnioculars", points: 4, aliases: ["binoculars"] },
+      ],
+    },
+    {
+      question: "Name a potion you'd love to keep in your cupboard.",
+      answers: [
+        { text: "Felix Felicis", points: 34, aliases: ["liquid luck", "luck potion", "felix"] },
+        { text: "Polyjuice Potion", points: 24, aliases: ["polyjuice"] },
+        { text: "Love Potion", points: 14, aliases: ["amortentia"] },
+        { text: "Veritaserum", points: 10, aliases: ["truth potion", "truth serum"] },
+        { text: "Pepperup Potion", points: 7, aliases: ["pepperup", "cold cure"] },
+        { text: "Healing Potion", points: 5, aliases: ["skele-gro", "skelegro", "wiggenweld", "dittany"] },
+        { text: "Draught of Living Death", points: 3, aliases: ["sleeping potion", "sleeping draught"] },
+      ],
+    },
+    {
+      question: "Name something Dobby the house-elf loves.",
+      answers: [
+        { text: "Socks", points: 48, aliases: ["sock"] },
+        { text: "Harry Potter", points: 26, aliases: ["harry"] },
+        { text: "Freedom", points: 12, aliases: ["being free", "being a free elf"] },
+        { text: "Clothes", points: 6, aliases: ["hats", "tea cosy", "jumpers"] },
+        { text: "Winky", points: 4, aliases: [] },
+      ],
+    },
+    {
+      question: "Name a famous member of Gryffindor house.",
+      answers: [
+        { text: "Harry Potter", points: 38, aliases: ["harry"] },
+        { text: "Hermione Granger", points: 22, aliases: ["hermione"] },
+        { text: "Ron Weasley", points: 14, aliases: ["ron"] },
+        { text: "Dumbledore", points: 10, aliases: ["albus dumbledore", "albus"] },
+        { text: "Neville Longbottom", points: 8, aliases: ["neville"] },
+        { text: "Hagrid", points: 4, aliases: ["rubeus hagrid"] },
+      ],
+    },
+  ],
+  lines: {
+    lobby: [
+      "Welcome, welcome! Grab your phones — they're basically wands with Wi-Fi.",
+      "Gather round, students! The survey owls are warming up.",
+    ],
+    preparing: [
+      "Our owls are still delivering the survey results. Patience, young wizards!",
+      "One moment — the parchment is still drying on today's survey.",
+    ],
+    gameIntro: [
+      "Good evening, witches and wizards, and welcome to The Wizarding Feud! Tonight, {team} take on {other}!",
+    ],
+    roundIntro: [
+      "Round {round}! We surveyed 100 witches and wizards...",
+      "Wands at the ready for round {round}. Our survey says nothing yet — but it will!",
+    ],
+    faceoff: [
+      "Face-off time! Fingers on your buzzers, and no Confundus charms, please.",
+      "Step up to the podium! First to buzz gets the first guess.",
+    ],
+    buzz: ["{name} buzzes in first! Let's hear it."],
+    topHit: [
+      "Number one answer! Ten points to {team} — well, more than ten actually!",
+      "Top of the board! Brilliant, simply brilliant!",
+    ],
+    hit: [
+      "It's on the board! {answer} for {points}!",
+      "Survey says... YES! Well guessed, {name}.",
+      "Merlin's beard, it's up there!",
+    ],
+    miss: [
+      "Oh dear. The survey has never heard of it.",
+      "Not on the board, I'm afraid. Even the portraits are wincing.",
+      "That's a strike! Bad luck, {name}.",
+    ],
+    dupe: ["We've already got that one, {name}! Strike!"],
+    timeout: ["Time's up! The hourglass waits for no wizard."],
+    control: ["{team} take control of the board!", "{team} will play! Let's go down the line."],
+    strikeOut: ["Three strikes! {other}, put your heads together — one guess to steal it all!"],
+    stealHit: ["{team} steal the points! Outrageous! Magnificent!"],
+    stealMiss: ["The steal fails! {team} keep the points."],
+    roundWon: ["{team} win the round and {points} points!"],
+    sweep: ["They cleared the whole board! {team} take {points} points!"],
+    gameOver: [
+      "And that's the game! {team} win The Wizarding Feud! Mischief managed.",
+    ],
+    tie: ["A tie! Perfectly balanced, like a well-brewed potion."],
+  },
+};

@@ -1,26 +1,226 @@
 @import "tailwindcss";
 
+/* Pack colors are injected as --c-* variables by <ThemeVars>; these defaults
+   are the classic studio look used on the landing page. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --c-bg: #050817;
+  --c-bg-alt: #101a45;
+  --c-panel: rgba(8, 14, 44, 0.8);
+  --c-tile: #0c3aa8;
+  --c-tile-edge: #f2c230;
+  --c-tile-face: #1f5be0;
+  --c-tile-text: #ffffff;
+  --c-accent: #f2c230;
+  --c-accent-soft: rgba(242, 194, 48, 0.18);
+  --c-text: #f6f3ea;
+  --c-strike: #ff3b30;
+  --c-team-0: #ff5a36;
+  --c-team-1: #22b8ff;
+  --font-display: var(--font-anton);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--c-bg);
+  --color-bg-alt: var(--c-bg-alt);
+  --color-panel: var(--c-panel);
+  --color-tile: var(--c-tile);
+  --color-tile-edge: var(--c-tile-edge);
+  --color-tile-face: var(--c-tile-face);
+  --color-tile-text: var(--c-tile-text);
+  --color-accent: var(--c-accent);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-ink: var(--c-text);
+  --color-strike: var(--c-strike);
+  --color-team-0: var(--c-team-0);
+  --color-team-1: var(--c-team-1);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.font-display {
+  font-family: var(--font-display), var(--font-geist-sans), serif;
+  letter-spacing: 0.02em;
+}
+
+.text-glow {
+  text-shadow:
+    0 0 18px color-mix(in srgb, var(--c-accent) 55%, transparent),
+    0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* ------------------------------------------------------------ TV framing */
+
+.tv-vignette {
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.65) 100%);
+}
+
+.tv-scanlines {
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px);
+  mix-blend-mode: overlay;
+}
+
+/* Slow "camera" breathing on the whole stage so it feels broadcast, not static. */
+@keyframes camera-drift {
+  0%,
+  100% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  33% {
+    transform: scale(1.012) translate3d(-0.35%, 0.2%, 0);
+  }
+  66% {
+    transform: scale(1.008) translate3d(0.3%, -0.25%, 0);
+  }
+}
+.camera-drift {
+  animation: camera-drift 24s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------ board tiles */
+
+.tile {
+  perspective: 900px;
+}
+.tile-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.75s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.tile[data-revealed="true"] .tile-inner {
+  transform: rotateX(-180deg);
+}
+.tile-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 0.6rem;
+}
+.tile-back {
+  transform: rotateX(180deg);
+}
+
+.tile-front {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.18), transparent 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--c-tile) 85%, white), var(--c-tile));
+  box-shadow:
+    inset 0 0 0 3px var(--c-tile-edge),
+    inset 0 0 22px rgba(0, 0, 0, 0.45),
+    0 8px 22px rgba(0, 0, 0, 0.45);
+}
+.tile-revealed {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.35), transparent 65%),
+    var(--c-tile-face);
+  color: var(--c-tile-text);
+  box-shadow:
+    inset 0 0 0 3px var(--c-tile-edge),
+    0 0 26px color-mix(in srgb, var(--c-accent) 45%, transparent);
+}
+.tile-revealed[data-auto="true"] {
+  filter: saturate(0.55) brightness(0.85);
+}
+
+@keyframes strike-pop {
+  0% {
+    transform: scale(2.4) rotate(-8deg);
+    opacity: 0;
+  }
+  35% {
+    transform: scale(0.92) rotate(2deg);
+    opacity: 1;
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.strike-x {
+  animation: strike-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  color: var(--c-strike);
+  text-shadow:
+    0 0 30px color-mix(in srgb, var(--c-strike) 80%, transparent),
+    0 6px 0 rgba(0, 0, 0, 0.6);
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--c-accent) 60%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 28px transparent;
+  }
+}
+.pulse-ring {
+  animation: pulse-ring 1.4s ease-out infinite;
+}
+
+/* Lite-mode background: CSS candles and stars when WebGL is off. */
+@keyframes float-candle {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scaleY(0.88);
+  }
+}
+.css-candle {
+  animation: float-candle 6s ease-in-out infinite;
+}
+.css-flame {
+  animation: flicker 0.18s ease-in-out infinite alternate;
+}
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.css-star {
+  animation: twinkle 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .camera-drift,
+  .css-candle,
+  .css-flame,
+  .css-star,
+  .pulse-ring {
+    animation: none;
+  }
 }
