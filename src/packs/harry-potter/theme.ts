@@ -11,15 +11,15 @@ export const harryPotterTheme: PackTheme = {
   tagline: "A Harry Potter fan pack",
   description:
     "We surveyed 100 witches and wizards. Floating candles, an enchanted ceiling, and questions about spells, creatures and life at Hogwarts.",
-  emoji: "🪄",
-  hostName: "Professor Bartholomew Quill",
+  emoji: "✨",
+  hostName: "Gilderoy Lockhart",
   audienceLabel: "100 witches and wizards",
   font: "cinzel",
   scene: "great-hall",
   music: "mystic-waltz",
   voice: {
     style:
-      "A warm, theatrical older British professor hosting a game show: playful, a little eccentric, building suspense before reveals and delighting in big moments.",
+      "A flamboyant, self-adoring celebrity wizard hosting a game show: polished British charm, a dazzling smile you can hear, milks every reveal, takes credit for everything and laughs off every mistake.",
     lang: "en-GB",
     rate: 1.02,
     pitch: 0.95,

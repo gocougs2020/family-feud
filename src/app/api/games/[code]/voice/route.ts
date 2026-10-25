@@ -25,7 +25,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
 
     let clip = cache.get(line.id);
     if (!clip) {
-      clip = await speakHostLine(line.text, getPackTheme(game.state.packId).voice);
+      clip = await speakHostLine(line.text, getPackTheme(game.state.packId).voice, { packId: game.state.packId });
       cache.set(line.id, clip);
       if (cache.size > 64) cache.delete(cache.keys().next().value!);
     }

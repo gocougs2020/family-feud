@@ -2,7 +2,7 @@ import { MockLanguageModelV4, MockSpeechModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { harryPotterContent } from "@/packs/harry-potter/content";
 import { harryPotterTheme } from "@/packs/harry-potter/theme";
-import { judgeGuess, normalizeSurvey, speakHostLine, trimLine, writeSurvey } from "./ai";
+import { judgeGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeSurvey } from "./ai";
 
 function mockModel(json: unknown) {
   return new MockLanguageModelV4({
@@ -93,7 +93,7 @@ describe("judgeGuess", () => {
 
 describe("speakHostLine", () => {
   it("sends the line and the pack's delivery notes to the speech model", async () => {
-    const calls: { text: string; instructions?: string; language?: string }[] = [];
+    const calls: { text: string; instructions?: string; voice?: string }[] = [];
     const model = new MockSpeechModelV4({
       modelId: "fish-audio/drama-3",
       doGenerate: async (options) => {
@@ -101,10 +101,22 @@ describe("speakHostLine", () => {
         return { audio: new Uint8Array([73, 68, 51]), warnings: [], response: { timestamp: new Date(), modelId: "fish-audio/drama-3" } };
       },
     });
-    const clip = await speakHostLine("Survey says!", harryPotterTheme.voice, model);
+    process.env.AI_TTS_VOICE_HARRY_POTTER = "voice-123";
+    const clip = await speakHostLine("Survey says!", harryPotterTheme.voice, { packId: "harry-potter", model });
+    delete process.env.AI_TTS_VOICE_HARRY_POTTER;
     expect(clip.bytes).toEqual(new Uint8Array([73, 68, 51]));
     expect(clip.mediaType).toMatch(/^audio\//);
-    expect(calls[0]).toMatchObject({ text: "Survey says!", instructions: harryPotterTheme.voice.style, language: "en" });
+    expect(calls[0]).toMatchObject({ text: "Survey says!", instructions: harryPotterTheme.voice.style, voice: "voice-123" });
+  });
+
+  it("picks a per-pack voice before the global one", () => {
+    process.env.AI_TTS_VOICE = "global";
+    expect(voiceIdFor("classic", harryPotterTheme.voice)).toBe("global");
+    process.env.AI_TTS_VOICE_CLASSIC = "classic-voice";
+    expect(voiceIdFor("classic", harryPotterTheme.voice)).toBe("classic-voice");
+    delete process.env.AI_TTS_VOICE;
+    delete process.env.AI_TTS_VOICE_CLASSIC;
+    expect(voiceIdFor("classic", harryPotterTheme.voice)).toBeUndefined();
   });
 });
 

@@ -19,7 +19,7 @@ Built on Next.js, the Vercel AI SDK and AI Gateway, and Supabase. It ships with 
   - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley", "the snake" is "Basilisk"), with an in-character quip
   - writes a sign-off recap at the end of the game
   - …and falls back to hand-written surveys and lines whenever AI is off or slow, so the game never stalls.
-- **Host voice and music**: with AI on, the host's lines are voiced by **`fish-audio/drama-3`** through the AI Gateway, with per-pack delivery notes (a theatrical British professor, a punchy studio host). Without AI, the browser's speech synthesis takes over. The original, procedurally composed music (a candle-lit waltz for the wizard pack, a studio groove for classic) is re-written from a random seed each game. Sound effects (ding, buzzer, drum roll, applause) are synthesized too. There are no audio files.
+- **Host voice and music**: with AI on, the host's lines are voiced by **`fish-audio/drama-3`** through the AI Gateway, with per-pack delivery notes (Gilderoy Lockhart hosts the wizard pack; a punchy studio host does Classic). Pick a specific Fish Audio voice per pack with `AI_TTS_VOICE_<PACK_ID>`, e.g. `AI_TTS_VOICE_HARRY_POTTER`. Without AI, the browser's speech synthesis takes over. The original, procedurally composed music (a candle-lit waltz for the wizard pack, a studio groove for classic) is re-written from a random seed each game. Sound effects (ding, buzzer, drum roll, applause) are synthesized too. There are no audio files.
 - **Real rules**: face-off (top answer wins outright, otherwise the higher answer wins), play or pass, rotating turns so everyone answers, three strikes, team steal, and double/triple points in the late rounds.
 
 ## Quick start (no accounts needed)

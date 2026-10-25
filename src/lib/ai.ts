@@ -130,7 +130,6 @@ export async function judgeGuess(input: {
     model: input.model ?? FAST_MODEL,
     timeout: 7_000,
     maxRetries: 0,
-    temperature: 0.4,
     maxOutputTokens: 200,
     instructions: `You are the judge and host of a Family Feud style game. Host persona: ${input.pack.hostPersona}`,
     output: Output.object({ schema: judgeSchema }),
@@ -171,7 +170,6 @@ export async function writeRecap(input: { pack: PackContent; state: GameState })
     model: FAST_MODEL,
     timeout: 12_000,
     maxRetries: 0,
-    temperature: 0.9,
     maxOutputTokens: 220,
     instructions: `You are the host of a Family Feud style show. Persona: ${input.pack.hostPersona}`,
     prompt: `The game just ended after ${rounds} rounds. Final score: ${state.teams[0].name} ${state.teams[0].score}, ${state.teams[1].name} ${state.teams[1].score}. Players: ${state.players.map((p) => `${p.name} (${state.teams[p.team].name})`).join(", ")}. Some final-round guesses: ${notable || "none"}.
@@ -182,14 +180,27 @@ Write a 2-3 sentence sign-off congratulating the winners, teasing the losers kin
 
 // ------------------------------------------------------------ host voice
 
+/**
+ * The provider voice id for a pack: AI_TTS_VOICE_<PACK_ID> (e.g.
+ * AI_TTS_VOICE_HARRY_POTTER), then AI_TTS_VOICE, then the pack's default.
+ * Env vars let a deployment pick a voice without changing the open-source pack.
+ */
+export function voiceIdFor(packId: string, voice: PackTheme["voice"]): string | undefined {
+  const perPack = process.env[`AI_TTS_VOICE_${packId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`];
+  return perPack || process.env.AI_TTS_VOICE || voice.aiVoice || undefined;
+}
+
 /** Voice one host line. Returns encoded audio (the model's default format). */
-export async function speakHostLine(text: string, voice: PackTheme["voice"], model?: SpeechModel) {
+export async function speakHostLine(
+  text: string,
+  voice: PackTheme["voice"],
+  opts: { packId?: string; model?: SpeechModel } = {},
+) {
   const { audio } = await generateSpeech({
-    model: model ?? gateway.speech(TTS_MODEL),
+    model: opts.model ?? gateway.speech(TTS_MODEL),
     text,
-    voice: process.env.AI_TTS_VOICE || voice.aiVoice,
+    voice: voiceIdFor(opts.packId ?? "", voice),
     instructions: voice.style,
-    language: voice.lang.slice(0, 2),
     maxRetries: 1,
     abortSignal: AbortSignal.timeout(15_000),
   });
