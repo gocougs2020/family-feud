@@ -18,14 +18,15 @@ import type { GameSecret, GameState, HostCue, SurveyRound } from "./types";
 // or automatically via OIDC when deployed on Vercel.
 //
 // Each job gets the model that suits it:
-// - MODEL (Sonnet) writes the survey: one big, quality-sensitive call per game,
-//   made while players are still joining, so its speed doesn't matter.
+// - MODEL (GPT-6.1 Sol, medium reasoning) writes the survey: one big,
+//   quality-sensitive call per game, made while players are still joining, so
+//   it can afford to think.
 // - FAST_MODEL (Haiku) writes the host's lines: short, many per game, and live,
 //   so it has to be quick.
 // - JUDGE_MODEL (a decision model) decides whether a guess matches an answer:
 //   a pick from a list, not writing, so it needs no chat model at all.
 
-const MODEL = process.env.AI_MODEL ?? "anthropic/claude-sonnet-5.5";
+const MODEL = process.env.AI_MODEL ?? "openai/gpt-6.1-sol";
 const FAST_MODEL = process.env.AI_FAST_MODEL ?? "anthropic/claude-haiku-5.5";
 const JUDGE_MODEL = process.env.AI_JUDGE_MODEL ?? "typesafe-ai/jev";
 const TTS_MODEL = process.env.AI_TTS_MODEL ?? "fish-audio/drama-3";
@@ -112,7 +113,8 @@ export async function writeSurvey(input: {
   const angles = shuffle(input.pack.angles).slice(0, Math.max(input.rounds + 2, 5));
   const { output } = await generateText({
     model: input.model ?? MODEL,
-    temperature: 1,
+    // Variety comes from the sampled angles; reasoning models pick their own sampling.
+    reasoning: "medium",
     timeout: 50_000,
     maxRetries: 1,
     instructions: `You write surveys for a Family Feud style party game. You also voice the host: ${input.pack.hostPersona}`,
