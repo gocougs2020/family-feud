@@ -2,7 +2,7 @@ import { MockLanguageModelV4, MockSpeechModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { harryPotterContent } from "@/packs/harry-potter/content";
 import { harryPotterTheme } from "@/packs/harry-potter/theme";
-import { judgeGuess, normalizeSurvey, speakHostLine, writeSurvey } from "./ai";
+import { judgeGuess, normalizeSurvey, speakHostLine, trimLine, writeSurvey } from "./ai";
 
 function mockModel(json: unknown) {
   return new MockLanguageModelV4({
@@ -105,5 +105,13 @@ describe("speakHostLine", () => {
     expect(clip.bytes).toEqual(new Uint8Array([73, 68, 51]));
     expect(clip.mediaType).toMatch(/^audio\//);
     expect(calls[0]).toMatchObject({ text: "Survey says!", instructions: harryPotterTheme.voice.style, language: "en" });
+  });
+});
+
+describe("trimLine", () => {
+  it("keeps short lines and cuts long ones at a boundary", () => {
+    expect(trimLine("Brilliant!", 160)).toBe("Brilliant!");
+    expect(trimLine("Splendid guess, Ron. But no professor answers to that title at the wedding", 40)).toBe("Splendid guess, Ron.");
+    expect(trimLine("A splendid guess but no professor answers to that title", 30)).toBe("A splendid guess but no…");
   });
 });

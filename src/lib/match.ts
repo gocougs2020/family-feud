@@ -54,7 +54,8 @@ function scoreCandidate(guess: string, candidate: string): number {
   // "a big snake" vs "snake": the whole answer appears in a short guess.
   if (c.every((w) => g.includes(w)) && g.length <= c.length + 2) return 0.8;
 
-  const allowed = Math.floor(Math.max(guess.length, candidate.length) / 5);
+  // One typo per 6 letters: "basilsk" → "basilisk", but not "snakes" → "snape".
+  const allowed = Math.floor(Math.max(guess.length, candidate.length) / 6);
   if (allowed > 0 && levenshtein(guess, candidate) <= allowed) return 0.75;
   return 0;
 }

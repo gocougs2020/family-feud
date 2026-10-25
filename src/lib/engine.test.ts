@@ -133,6 +133,8 @@ describe("localMatch", () => {
   });
   it("rejects unrelated guesses", () => {
     expect(localMatch("house elf", answers)).toBeNull();
+    const teachers = [{ text: "Snape", points: 9, aliases: [] }];
+    expect(localMatch("snakes", teachers)).toBeNull();
     expect(localMatch("", answers)).toBeNull();
   });
 });
