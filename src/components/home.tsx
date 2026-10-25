@@ -6,7 +6,7 @@ import { useState } from "react";
 import { createGame, seats } from "@/lib/client/api";
 import { DEFAULT_PACK_ID, packThemes } from "@/packs";
 
-export function Home({ status }: { status: { realtime: "supabase" | "local"; ai: boolean } }) {
+export function Home({ status }: { status: { realtime: "supabase" | "local"; ai: boolean; deployed: boolean } }) {
   const router = useRouter();
   const [packId, setPackId] = useState(DEFAULT_PACK_ID);
   const [topic, setTopic] = useState("");
@@ -48,6 +48,13 @@ export function Home({ status }: { status: { realtime: "supabase" | "local"; ai:
             Put the show on a big screen. Everyone grabs their phone, joins with a room code, and plays — buzzing in, guessing, and stealing in real time. An AI host writes a fresh survey every game.
           </p>
         </header>
+
+        {status.deployed && status.realtime === "local" && (
+          <p className="rounded-2xl border border-strike/50 bg-strike/15 px-4 py-3 text-sm">
+            <b>Database not connected.</b> This deployment is keeping games in memory, which doesn&apos;t work reliably on Vercel
+            (players may drop out of rooms). Connect Supabase and run the migration — see the README&apos;s &ldquo;Deploy to Vercel&rdquo; steps.
+          </p>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
           <section className="flex flex-col gap-5 rounded-3xl border border-white/10 bg-panel p-5 backdrop-blur sm:p-7">
@@ -146,7 +153,7 @@ export function Home({ status }: { status: { realtime: "supabase" | "local"; ai:
 
         <footer className="mt-auto flex flex-wrap items-center gap-3 text-xs opacity-70">
           <span className="rounded-full bg-white/10 px-3 py-1">
-            Sync: {status.realtime === "supabase" ? "Supabase Realtime" : "local dev server (memory)"}
+            Sync: {status.realtime === "supabase" ? "Supabase Realtime" : status.deployed ? "in-memory (connect Supabase!)" : "local dev server (memory)"}
           </span>
           <span className="rounded-full bg-white/10 px-3 py-1">AI host: {status.ai ? "on (Vercel AI Gateway)" : "off — using built-in questions"}</span>
           <span>Fan-made party game. Not affiliated with Family Feud, Fremantle, or any franchise in the packs.</span>

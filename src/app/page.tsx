@@ -14,5 +14,9 @@ export default function Page() {
 
 async function HomeWithStatus() {
   await connection(); // read env at request time so status reflects the deployment
-  return <Home status={{ realtime: supabaseConfigured() ? "supabase" : "local", ai: aiEnabled() }} />;
+  return (
+    <Home
+      status={{ realtime: supabaseConfigured() ? "supabase" : "local", ai: aiEnabled(), deployed: Boolean(process.env.VERCEL) }}
+    />
+  );
 }
