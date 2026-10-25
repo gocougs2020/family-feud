@@ -33,8 +33,10 @@ export const TIMERS = {
   playPass: 15_000,
   steal: 40_000,
   roundEnd: 12_000,
-  /** extra time granted while the AI judge is thinking */
+  /** extra time granted while the guess is read out and judged */
   judging: 15_000,
+  /** the drum roll between "Survey says…" and the reveal */
+  surveySays: 1_500,
   preparing: 60_000,
   /** allowance for fetching the host's voice before it starts speaking */
   voiceLead: 3_000,
@@ -172,12 +174,17 @@ export function openTurn(state: GameState, secret: GameSecret | null, ctx: Engin
 }
 
 /**
- * The TV has finished saying a line: open the turn that was waiting on it, or
- * end a round's intro after a short beat.
+ * The TV has finished saying a line: open the turn that was waiting on it,
+ * note that a guess has been read out (so the reveal can follow), or end a
+ * round's intro after a short beat.
  */
 export function lineDone(state: GameState, secret: GameSecret | null, lineId: string, ctx: EngineCtx): GameState | null {
   if (!lineId) return null;
   if (state.turn?.heldFor === lineId) return openTurn(state, secret, ctx);
+  const judging = state.turn?.judging;
+  if (judging?.lineId === lineId) {
+    return judging.saidAt == null ? { ...state, turn: { ...state.turn!, judging: { ...judging, saidAt: ctx.now } } } : null;
+  }
   const soon = ctx.now + TIMERS.afterIntro;
   if (state.phase === "round_intro" && state.hostLine?.id === lineId && state.deadline != null && state.deadline > soon) {
     return { ...state, deadline: soon };
@@ -414,10 +421,18 @@ export function buzz(state: GameState, playerId: string, turnId: string, text: s
   const clean = text.trim().slice(0, LIMITS.answerLength);
   if (!clean) throw new GameError("Type an answer first");
   const team = state.players.find((p) => p.id === playerId)?.team ?? 0;
-  const answerTurn: Turn = { ...makeTurn(ctx, "faceoff_answer", [playerId], team, TIMERS.judging), judging: { playerId, text: clean } };
-  // No host line yet: the reaction to the answer covers the buzz too.
-  const next: GameState = { ...state, turn: answerTurn };
+  const answerTurn = makeTurn(ctx, "faceoff_answer", [playerId], team, TIMERS.judging);
+  const next = announceGuess(state, answerTurn, playerId, clean, ctx);
   return emit(next, ctx, { kind: "buzz", playerId, team, text: clean });
+}
+
+/**
+ * Lock a guess in for judging and have the host read it out: "Harry says
+ * robes. Survey says…". The reveal waits for the TV to finish saying it.
+ */
+function announceGuess(state: GameState, turn: Turn, playerId: string, text: string, ctx: EngineCtx): GameState {
+  const line = { id: ctx.id(), text: `${playerName(state, playerId)} says ${text}. Survey says…` };
+  return { ...state, hostLine: line, turn: { ...turn, judging: { playerId, text, lineId: line.id } } };
 }
 
 /** Lock in a guess while it's judged, so the TV can do "Survey says…". */
@@ -426,10 +441,7 @@ export function markJudging(state: GameState, playerId: string, turnId: string, 
   if (turn.judging) throw new GameError("An answer is already being judged", 409);
   const clean = text.trim().slice(0, LIMITS.answerLength);
   if (!clean) throw new GameError("Type an answer first");
-  const next: GameState = {
-    ...state,
-    turn: { ...turn, judging: { playerId, text: clean }, deadline: Math.max(turn.deadline, ctx.now + TIMERS.judging) },
-  };
+  const next = announceGuess(state, { ...turn, deadline: Math.max(turn.deadline, ctx.now + TIMERS.judging) }, playerId, clean, ctx);
   return emit(next, ctx, { kind: "judging", playerId, text: clean, team: turn.team ?? undefined });
 }
 

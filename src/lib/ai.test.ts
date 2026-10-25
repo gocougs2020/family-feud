@@ -132,6 +132,19 @@ describe("writeHostLine", () => {
     expect(prompts[0]).toContain("Welcome, Harry!");
   });
 
+  it("writes with reasoning off and one of the pack's comic angles", async () => {
+    const prompts: string[] = [];
+    const reasoning: unknown[] = [];
+    await writeHostLine({
+      pack: harryPotterContent,
+      moment: cueMoment({ key: "miss", vars: { name: "Ron" } }),
+      facts: "Teams: Gryffindor vs Slytherin.",
+      model: mockModel("Not on the board, Ron.", prompts, reasoning),
+    });
+    expect(reasoning).toEqual(["none"]);
+    expect(harryPotterContent.hostRiffs!.some((r) => prompts[0].includes(r.slice(0, 30)))).toBe(true);
+  });
+
   it("describes every cue the engine can give", () => {
     // `rules` is always read as written, never cued.
     for (const key of Object.keys(harryPotterContent.lines).filter((k) => k !== "rules")) expect(cueMoment({ key, vars: {} })).not.toBe(key);
