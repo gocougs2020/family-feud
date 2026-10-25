@@ -133,7 +133,8 @@ describe("writeHostLine", () => {
   });
 
   it("describes every cue the engine can give", () => {
-    for (const key of Object.keys(harryPotterContent.lines)) expect(cueMoment({ key, vars: {} })).not.toBe(key);
+    // `rules` is always read as written, never cued.
+    for (const key of Object.keys(harryPotterContent.lines).filter((k) => k !== "rules")) expect(cueMoment({ key, vars: {} })).not.toBe(key);
     expect(cueMoment({ key: "lobby", vars: { code: "ABCD" } })).toContain("A B C D");
     expect(cueMoment({ key: "roundIntro", vars: { round: 3, rounds: 4, multiplier: 2 } })).toContain("2x points");
   });

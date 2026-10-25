@@ -51,20 +51,30 @@ export function PlayerScreen({ code }: { code: string }) {
     return () => clearTimeout(t);
   }, [deadline, inGame, act, serverNow]);
 
-  // Buzz the phone when it's your move.
-  const myTurn = !!(me && state?.turn?.playerIds.includes(me.id));
+  // Buzz the phone when it's your move (once the host has finished talking).
+  const myTurn = !!(me && state?.turn?.playerIds.includes(me.id) && state.turn.opensAt == null);
   const turnId = state?.turn?.id;
   useEffect(() => {
     if (myTurn) navigator.vibrate?.([80, 40, 80]);
   }, [myTurn, turnId]);
 
-  if (live.notFound) {
+  if (live.notFound || state?.phase === "closed") {
+    const ended = live.ended || state?.phase === "closed";
     return (
       <Shell>
         <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-          <p className="text-xl">No game with code <b>{code}</b>.</p>
+          {ended ? (
+            <>
+              <p className="font-display text-2xl">Thanks for playing!</p>
+              <p className="opacity-80">
+                {state?.closed === "expired" ? "This game room hit its one-hour limit and has closed." : "This game room has closed."}
+              </p>
+            </>
+          ) : (
+            <p className="text-xl">No game with code <b>{code}</b>.</p>
+          )}
           <Link href="/play" className="rounded-xl bg-accent px-5 py-3 font-semibold text-black">
-            Try another code
+            {ended ? "Join another game" : "Try another code"}
           </Link>
         </div>
       </Shell>
@@ -234,11 +244,38 @@ function PhaseView({ state, me, act, serverNow }: { state: GameState; me: Public
   const turn = state.turn;
   const mine = !!turn?.playerIds.includes(me.id);
   const name = (id?: string) => state.players.find((p) => p.id === id)?.name ?? "Someone";
-  const question = state.round && <p className="text-center text-lg font-semibold leading-snug">{state.round.question}</p>;
+  const question = state.round?.question && <p className="text-center text-lg font-semibold leading-snug">{state.round.question}</p>;
   // What a face-off player has typed, kept for their reply if the other player buzzes first.
   const [draft, setDraft] = useState({ round: -1, text: "" });
   const faceoffDraft = draft.round === state.roundIndex ? draft.text : "";
   const saveDraft = (text: string) => setDraft({ round: state.roundIndex, text });
+
+  // No answering while the host is talking: the turn opens when they're done.
+  if (mine && turn?.opensAt != null) {
+    const heading =
+      turn.kind === "buzz"
+        ? "You're in the face-off!"
+        : turn.kind === "play_pass"
+          ? "You won the face-off!"
+          : turn.kind === "steal"
+            ? "Get ready to steal!"
+            : "You're up next!";
+    return (
+      <>
+        {question}
+        <Big
+          sub={
+            turn.kind === "buzz"
+              ? "Get your thumbs ready. The question appears as soon as the host is done talking."
+              : "Listen to the host. You can answer as soon as they're done."
+          }
+        >
+          {heading}
+        </Big>
+        {state.phase !== "faceoff" && <MiniBoard state={state} />}
+      </>
+    );
+  }
 
   switch (state.phase) {
     case "lobby":
@@ -249,9 +286,9 @@ function PhaseView({ state, me, act, serverNow }: { state: GameState; me: Public
 
     case "round_intro":
       return (
-        <>
-          <Big sub={question}>Round {state.roundIndex + 1}</Big>
-        </>
+        <Big sub={state.roundIndex === 0 ? "Listen to the host explain how to play. The question appears at the face-off." : "Eyes on the TV. The question appears at the face-off."}>
+          Round {state.roundIndex + 1}
+        </Big>
       );
 
     case "faceoff":
@@ -272,7 +309,7 @@ function PhaseView({ state, me, act, serverNow }: { state: GameState; me: Public
         ) : (
           <>
             {question}
-            <Big sub="Watch the TV — first to type an answer and buzz in goes first.">
+            <Big sub={turn.opensAt != null ? "Face-off coming up. Watch the TV!" : "Watch the TV — first to type an answer and buzz in goes first."}>
               {turn.playerIds.map(name).join(" vs ")}
             </Big>
           </>

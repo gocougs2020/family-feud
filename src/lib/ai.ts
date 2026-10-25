@@ -52,7 +52,7 @@ function shuffle<T>(items: T[]): T[] {
 const surveySchema = z.object({
   gameIntro: z
     .string()
-    .describe("The host's opening monologue, 1-2 sentences, welcoming everyone and naming both teams. Spoken aloud before round 1's intro."),
+    .describe("The host's opening monologue, 1-2 sentences, welcoming everyone and naming both teams. The rules are read out straight after it, so don't explain them, and don't mention any question."),
   rounds: z
     .array(
       z.object({
@@ -60,7 +60,7 @@ const surveySchema = z.object({
         intro: z
           .string()
           .describe(
-            "One short spoken sentence leading into this round, e.g. how many were surveyed or the points at stake. The host reads the question itself straight after, so don't include or paraphrase it, and don't reveal answers.",
+            "One short spoken sentence introducing this round, e.g. how many were surveyed or the points at stake. The question is revealed later, at the face-off, so don't include, paraphrase or hint at it, and don't reveal answers.",
           ),
         answers: z
           .array(
@@ -182,10 +182,10 @@ const MOMENTS: Record<string, (v: HostCue["vars"]) => string> = {
   lobby: (v) => `The show has just opened. Invite everyone to grab their phone and join with room code ${String(v.code ?? "").split("").join(" ")}.`,
   join: (v) => `Players just joined on their phones: ${v.joined}. Greet each of them by name, warmly and briefly. ${v.players} player(s) are in so far.`,
   preparing: () => "The survey results are still being tallied. Fill a few seconds with banter.",
-  gameIntro: (v) => `Open the show: welcome everyone and introduce tonight's teams, ${v.team} and ${v.other}. Then lead into the first question. The question is read out straight after you, so don't say it.`,
+  gameIntro: (v) => `Open the show: welcome everyone and introduce tonight's teams, ${v.team} and ${v.other}. The rules are read out straight after you, so don't explain them or mention a question.`,
   roundIntro: (v) =>
-    `Introduce round ${v.round} of ${v.rounds}${Number(v.multiplier) > 1 ? `, worth ${v.multiplier}x points` : ""}, and lead into the question. The question is read out straight after you, so don't say it.`,
-  faceoff: (v) => `${v.names} step up for the face-off. Tell them to type an answer on their phone and hit the buzzer; the fastest buzz goes first.`,
+    `Introduce round ${v.round} of ${v.rounds}${Number(v.multiplier) > 1 ? `, worth ${v.multiplier}x points` : ""}. The question is revealed at the face-off, after you, so don't mention or guess at it.`,
+  faceoff: (v) => `Call ${v.names} up for the face-off and build a little suspense: the question pops up on screen the moment you finish, and they type an answer on their phone and buzz in, fastest first. Don't say or guess at the question.`,
   noBuzz: (v) => `Nobody buzzed in time, so ${v.name} has to answer now.`,
   topHit: (v) => `${v.name} found the number one answer, ${v.answer}.`,
   hit: (v) => `${v.name}'s answer ${v.answer} is on the board for ${v.points}.`,

@@ -163,9 +163,16 @@ function Preparing({ theme }: StageProps) {
 
 // ------------------------------------------------------------ round intro
 
+const HOW_TO_PLAY = [
+  ["Face-off", "When the question appears, type your answer on your phone and buzz in. Higher answer wins."],
+  ["Play or pass", "The winner's team plays the board, or passes it to the other team."],
+  ["Three strikes", "Find every answer before three strikes, or the other team gets one shot to steal."],
+] as const;
+
 function RoundIntro({ state, theme }: StageProps) {
   const round = state.round!;
   const last = state.roundIndex === state.settings.rounds - 1;
+  const first = state.roundIndex === 0;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-[4vh] text-center">
       <motion.div
@@ -194,14 +201,25 @@ function RoundIntro({ state, theme }: StageProps) {
       >
         We surveyed {theme.audienceLabel}…
       </motion.div>
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 2.4, duration: 0.8 }}
-        className="font-display max-w-[80vw] text-[clamp(1.8rem,3.8vw,4.2rem)] leading-tight"
-      >
-        {round.question}
-      </motion.div>
+      {/* The question itself stays hidden until the face-off opens. */}
+      {first && (
+        <div className="grid max-w-[85vw] grid-cols-3 gap-[2vw]">
+          {HOW_TO_PLAY.map(([title, body], i) => (
+            <motion.div
+              key={title}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 2.4 + i * 0.5, duration: 0.7 }}
+              className="flex flex-col gap-2 rounded-2xl bg-panel p-[1.5vw] text-left backdrop-blur"
+            >
+              <div className="font-display text-[clamp(1.1rem,2vw,2.2rem)] text-accent">
+                {i + 1}. {title}
+              </div>
+              <div className="text-[clamp(0.9rem,1.4vw,1.5rem)] leading-snug opacity-90">{body}</div>
+            </motion.div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -215,7 +233,7 @@ function TurnBanner({ state, serverNow }: StageProps) {
   let label = "";
   let total: number = state.settings.answerSeconds * 1000;
   if (state.phase === "faceoff" && turn?.kind === "buzz") {
-    label = `FACE-OFF: ${names(turn.playerIds)} — type it & buzz in!`;
+    label = turn.opensAt != null ? `FACE-OFF: ${names(turn.playerIds)} — get ready…` : `FACE-OFF: ${names(turn.playerIds)} — type it & buzz in!`;
     total = TIMERS.buzz;
   } else if (turn?.kind === "faceoff_answer") {
     label = `${names(turn.playerIds)}, your answer?`;
@@ -246,7 +264,7 @@ function TurnBanner({ state, serverNow }: StageProps) {
       >
         {label}
       </span>
-      {turn && !turn.judging && <Countdown deadline={turn.deadline} total={total} serverNow={serverNow} size={56} />}
+      {turn && !turn.judging && turn.opensAt == null && <Countdown deadline={turn.deadline} total={total} serverNow={serverNow} size={56} />}
     </motion.div>
   );
 }
@@ -257,7 +275,17 @@ function BoardView(props: StageProps) {
   const activeTeam = state.turn?.team ?? round.control;
   return (
     <div className="flex flex-1 flex-col gap-[2.5vh]">
-      <div className="mx-auto max-w-[80vw] text-center font-display text-[clamp(1.1rem,2.2vw,2.4rem)] leading-tight">{round.question}</div>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={round.question ?? "hidden"}
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: round.question == null ? 0.6 : 1, scale: 1 }}
+          exit={{ opacity: 0 }}
+          className="mx-auto max-w-[80vw] text-center font-display text-[clamp(1.1rem,2.2vw,2.4rem)] leading-tight"
+        >
+          {round.question ?? "The question is coming up…"}
+        </motion.div>
+      </AnimatePresence>
       <div className="grid flex-1 grid-cols-[minmax(0,1fr)_minmax(0,4.2fr)_minmax(0,1fr)] items-center gap-[2vw]">
         <TeamPodium state={state} team={0} active={activeTeam === 0} />
         <div className="flex flex-col gap-[1.5vh]">

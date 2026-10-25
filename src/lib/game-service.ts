@@ -8,10 +8,17 @@ import {
   addPlayer,
   buzz,
   choosePlayPass,
+  closeReason,
+  closeRoom,
   createGameState,
   endGame,
   fitDeadlineToLine,
   GameError,
+  holdNewTurn,
+  holdTurnForLine,
+  hostBack,
+  hostLeaving,
+  lineDone,
   markJudging,
   removePlayer,
   resetForReplay,
@@ -53,10 +60,22 @@ export function normalizeCode(code: string) {
   return code.trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
 }
 
+/**
+ * Load a live room. A room that has been shut, or is due to be (the TV left
+ * and didn't come back, or it hit the one-hour limit), is gone.
+ */
 export async function loadGame(code: string): Promise<StoredGame> {
   const game = await getStore().getByCode(normalizeCode(code));
   if (!game) throw new GameError("No game with that code", 404);
+  const reason = closeReason(game.state, Date.now());
+  if (reason) await shutRoom(game.id, reason);
+  if (reason || game.state.phase === "closed") throw new GameError("This game has ended", 410);
   return game;
+}
+
+/** Close the room for every screen. The row itself is swept up by the store's cleanup. */
+async function shutRoom(id: string, reason: NonNullable<GameState["closed"]>) {
+  return getStore().mutate(id, (s) => (s.phase === "closed" ? null : closeRoom(s, reason)));
 }
 
 // ------------------------------------------------------------ host lines
@@ -77,13 +96,18 @@ function prepareLine(prev: GameState | null, next: GameState): GameState {
   return logLine(next, line.text);
 }
 
-/** Every game write goes through here, so no host line is missed. */
+/**
+ * Every game write goes through here, so no host line is missed, and a turn
+ * that starts with a new line waits for the host to finish it.
+ */
 async function mutateGame(id: string, fn: (state: GameState, ctx: EngineCtx) => GameState | null) {
   let before: string | undefined;
   const result = await getStore().mutate(id, (s) => {
+    if (s.phase === "closed") throw new GameError("This game has ended", 410);
     before = s.hostLine?.id;
-    const next = fn(s, ctxFor(s));
-    return next && prepareLine(s, next);
+    const ctx = ctxFor(s);
+    const next = fn(s, ctx);
+    return next && holdNewTurn(s, prepareLine(s, next), ctx.now);
   });
   afterLine(id, result.state, before);
   return result;
@@ -92,7 +116,11 @@ async function mutateGame(id: string, fn: (state: GameState, ctx: EngineCtx) => 
 function afterLine(id: string, state: GameState, before?: string) {
   const line = state.hostLine;
   if (!aiEnabled() || !line || line.id === before) return;
-  after(() => (line.pending ? finishLine(id, line.id) : warmVoice(state.packId, line.text)));
+  after(() =>
+    (line.pending ? finishLine(id, line.id) : warmVoice(state.packId, line.text)).catch((err) =>
+      console.warn("[feud] host line follow-up failed (was the room closed?):", err),
+    ),
+  );
 }
 
 /** A short, public summary of the game for the AI host. */
@@ -105,7 +133,8 @@ function describeGame(state: GameState): string {
   }
   const round = state.round;
   if (round && state.phase !== "lobby") {
-    facts.push(`Round ${round.index + 1} of ${state.settings.rounds}${round.multiplier > 1 ? ` (${round.multiplier}x points)` : ""}: "${round.question}"`);
+    const question = round.question == null ? "the question hasn't been revealed yet" : `"${round.question}"`;
+    facts.push(`Round ${round.index + 1} of ${state.settings.rounds}${round.multiplier > 1 ? ` (${round.multiplier}x points)` : ""}: ${question}`);
     const shown = round.board.filter((slot) => slot.revealed && !slot.auto).map((slot) => `${slot.text} (${slot.points})`);
     facts.push(`On the board: ${shown.join(", ") || "nothing yet"}; ${round.board.filter((slot) => !slot.revealed).length} still hidden. Bank: ${round.bank}. Strikes: ${round.strikes}.`);
     if (round.control != null) facts.push(`${state.teams[round.control].name} control the board.`);
@@ -137,7 +166,7 @@ async function finishLine(id: string, lineId: string) {
   const voiced = warmVoice(state.packId, text);
   await store.mutate(id, (s) =>
     s.hostLine?.id === lineId && s.hostLine.pending
-      ? fitDeadlineToLine(logLine({ ...s, hostLine: { id: lineId, text } }, text), Date.now())
+      ? fitDeadlineToLine(holdTurnForLine(logLine({ ...s, hostLine: { id: lineId, text } }, text), Date.now()), Date.now())
       : null,
   );
   await voiced;
@@ -239,14 +268,22 @@ export type Action =
   | { type: "play_pass"; turnId: string; choice: "play" | "pass" }
   | { type: "tick" }
   | { type: "skip" }
+  | { type: "line_done"; lineId: string }
   | { type: "kick"; playerId: string }
   | { type: "end" }
-  | { type: "play_again" };
+  | { type: "play_again" }
+  | { type: "close" }
+  | { type: "host_leaving" }
+  | { type: "host_back" };
 
 function requirePlayer(seat: Seat | null, state: GameState): string {
   if (!seat || seat.role !== "player" || !seat.playerId) throw new GameError("Join the game first", 401);
   if (!state.players.some((p) => p.id === seat.playerId)) throw new GameError("You're not in this game anymore", 403);
   return seat.playerId;
+}
+
+function requireHost(seat: Seat | null, message: string) {
+  if (seat?.role !== "host") throw new GameError(message, 403);
 }
 
 function requireHostOrVip(seat: Seat | null, state: GameState) {
@@ -317,13 +354,31 @@ export async function performAction(code: string, seat: Seat | null, action: Act
       result = await run((s, ctx) => tick(s, secret, ctx, force));
       break;
     }
+    case "line_done": {
+      requireHost(seat, "Only the TV can say the host is done");
+      const secret = await store.getSecret(id);
+      result = await run((s, ctx) => lineDone(s, secret, String(action.lineId ?? ""), ctx));
+      break;
+    }
     case "kick":
-      if (seat?.role !== "host") throw new GameError("Only the host can remove players", 403);
+      requireHost(seat, "Only the host can remove players");
       result = await run((s) => removePlayer(s, action.playerId));
       break;
     case "end":
-      if (seat?.role !== "host") throw new GameError("Only the host can end the game", 403);
+      requireHost(seat, "Only the host can end the game");
       result = await run((s, ctx) => (s.phase === "game_over" ? null : endGame(s, ctx)));
+      break;
+    case "close":
+      requireHost(seat, "Only the host can close the room");
+      result = await shutRoom(id, "host");
+      break;
+    case "host_leaving":
+      requireHost(seat, "Only the TV can do that");
+      result = await run((s) => hostLeaving(s, Date.now()));
+      break;
+    case "host_back":
+      requireHost(seat, "Only the TV can do that");
+      result = await run((s) => hostBack(s));
       break;
     case "play_again":
       requireHostOrVip(seat, game.state);

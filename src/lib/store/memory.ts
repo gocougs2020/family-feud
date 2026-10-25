@@ -22,12 +22,25 @@ const mem: MemoryGlobals =
   g.__feudMemory ??
   (g.__feudMemory = { games: new Map(), byCode: new Map(), bus: new EventEmitter().setMaxListeners(500) });
 
-const STALE_MS = 24 * 60 * 60 * 1000;
+const SESSION_MS = 60 * 60 * 1000;
+/** closed rooms are kept briefly so every screen hears they closed */
+const CLOSED_MS = 60 * 1000;
+
+/** Same rules as the Supabase `delete_stale_games` function. */
+function stale(entry: Entry, now: number) {
+  const { state } = entry;
+  return (
+    now - state.createdAt > SESSION_MS ||
+    now - entry.updatedAt > SESSION_MS ||
+    (state.phase === "closed" && now - entry.updatedAt > CLOSED_MS) ||
+    (state.closesAt != null && now > state.closesAt)
+  );
+}
 
 function sweep() {
-  const cutoff = Date.now() - STALE_MS;
+  const now = Date.now();
   for (const [id, entry] of mem.games) {
-    if (entry.updatedAt < cutoff) {
+    if (stale(entry, now)) {
       mem.games.delete(id);
       mem.byCode.delete(entry.code);
     }

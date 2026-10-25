@@ -16,6 +16,8 @@ interface Hooks {
   onEnd?: () => void;
   /** how much of `line` has been spoken, 0–1 */
   onProgress?: (line: Line, fraction: number) => void;
+  /** `line` has been said in full (not called for a line cut short by the next one) */
+  onDone?: (line: Line) => void;
 }
 
 /** Played a touch faster than the model's natural pace, to keep the show moving. */
@@ -118,6 +120,7 @@ export class HostVoice {
       this.clearTicker();
       hooks.onProgress?.(line, 1);
       hooks.onEnd?.();
+      hooks.onDone?.(line);
     };
     hooks.onProgress?.(line, 0);
     audio.play().catch(() => this.runClock(line, estimate * 1000, hooks));
@@ -158,6 +161,7 @@ export class HostVoice {
       this.clearTicker();
       hooks.onProgress?.(line, 1);
       hooks.onEnd?.();
+      hooks.onDone?.(line);
     };
     utterance.onerror = () => {
       clearTimeout(watchdog);
@@ -177,7 +181,10 @@ export class HostVoice {
     this.tick(() => {
       const fraction = (Date.now() - startedAt) / ms;
       hooks.onProgress?.(line, fraction);
-      if (fraction >= 1) this.clearTicker();
+      if (fraction >= 1) {
+        this.clearTicker();
+        hooks.onDone?.(line);
+      }
     });
   }
 

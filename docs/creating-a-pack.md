@@ -60,6 +60,8 @@ export const spaceContent: PackContent = {
     // writes every line fresh from your persona; these are the fallback.
     // Placeholders: {name} {names} {team} {other} {answer} {points} {round}
     lobby: ["Welcome aboard! Grab your phones."],
+    // `rules` is read word for word before round 1, AI or not, so keep it accurate
+    rules: ["Here's how it works: type your answer when the question pops up, then buzz in..."],
     // ...every HostLineKey needs at least one line
   },
 };

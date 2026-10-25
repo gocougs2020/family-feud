@@ -13,7 +13,8 @@ export type Phase =
   | "play"
   | "steal"
   | "round_end"
-  | "game_over";
+  | "game_over"
+  | "closed"; // the room has been shut down; screens disconnect
 
 export interface PublicPlayer {
   id: string;
@@ -61,6 +62,15 @@ export interface Turn {
   playerIds: string[];
   team: TeamIndex | null;
   deadline: number;
+  /** how long players get once the turn opens */
+  ms: number;
+  /**
+   * While set, the turn is held: players can't act until the host finishes the
+   * line `heldFor`. The TV opens it as soon as that line has been spoken; this
+   * is the fallback time if it doesn't.
+   */
+  opensAt?: number;
+  heldFor?: string;
   /** set while a submitted guess is being judged */
   judging?: { playerId: string; text: string };
 }
@@ -73,7 +83,8 @@ export interface FaceoffState {
 
 export interface RoundState {
   index: number;
-  question: string;
+  /** null until the face-off opens, so nobody gets a head start on it */
+  question: string | null;
   multiplier: number;
   board: BoardSlot[];
   bank: number;
@@ -89,6 +100,7 @@ export type GameEventKind =
   | "join"
   | "start"
   | "round_start"
+  | "question"
   | "buzz"
   | "judging"
   | "hit"
@@ -165,6 +177,10 @@ export interface GameState {
   hostLog?: string[];
   recap?: string;
   winner?: TeamIndex | "tie";
+  /** the TV window was closed: the room shuts at this time unless it comes back (e.g. a reload) */
+  closesAt?: number;
+  /** why the room was shut down, once phase is "closed" */
+  closed?: "host" | "host_left" | "expired";
 }
 
 export interface SurveyAnswer {
