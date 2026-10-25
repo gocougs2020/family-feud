@@ -16,7 +16,7 @@ Built on Next.js, the Vercel AI SDK and AI Gateway, and Supabase. It ships with 
 - **Phone controller** (`/play/ABCD`): join with a name, switch teams, type-then-buzz face-offs (you type your answer and the big BUZZ button locks it in, so the race is to think of an answer), an answer box when it's your turn, play/pass, team steals, and haptic buzzes on your turn.
 - **AI host** (via the Vercel AI Gateway):
   - writes a fresh survey (questions, ranked answers, points and aliases) for every game, while players are still joining in the lobby
-  - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley", "the snake" is "Basilisk")
+  - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley", "the snake" is "Basilisk") with a fast decision model
   - writes every host line fresh, in character, for that moment of that game: greeting players by name as they join, the opening, reading each question aloud, reacting to every answer (and saying what's at stake next), and a spoken sign-off recap
   - voices each line as soon as it's written, and the TV lets a line finish (or fades it out) rather than cutting the host off mid-word
   - …and falls back to hand-written surveys and canned lines whenever AI is off or slow (a host line gets about 3 seconds), so the game never stalls.
@@ -81,7 +81,7 @@ The game needs a database **and** real-time push to every phone. Supabase's free
 
 One thing to know: free Supabase projects **pause after a week of inactivity**. Un-pause from the dashboard before game night, or upgrade if you host often.
 
-AI cost is small. Each game uses one survey-writing call on `AI_MODEL`, plus one fast-model call for each answer that the local matcher can't decide and one for the recap. On top of that, each host line (a sentence or two) is one text-to-speech call to `AI_TTS_MODEL` (`fish-audio/drama-3` by default). Only the TV's host seat can request speech, and only for the line currently on screen.
+AI cost is small. Each game uses one survey-writing call on `AI_MODEL` (Sonnet: one big, quality-sensitive call made while players join). Each guess the local matcher can't decide is one call to a decision model, `AI_JUDGE_MODEL` (`typesafe-ai/jev`): it picks the matching answer from the board's list rather than writing text, so it's quick and cheap. Each host line, including answer reactions and the recap, is one short call on `AI_FAST_MODEL` (Haiku, picked for speed because lines are written live). On top of that, each host line (a sentence or two) is one text-to-speech call to `AI_TTS_MODEL` (`fish-audio/drama-3` by default). Only the TV's host seat can request speech, and only for the line currently on screen.
 
 ## How it works
 
@@ -112,7 +112,7 @@ src/
   components/play/        phone controller
   lib/engine.ts           all game rules as pure functions (unit-tested)
   lib/game-service.ts     orchestrates store + engine + AI
-  lib/ai.ts               survey writer, answer judge, host lines, recap, host TTS (AI SDK + Gateway)
+  lib/ai.ts               survey writer, answer judge (decision model), host lines, recap, host TTS (AI SDK + Gateway)
   lib/match.ts            fast local answer matching (aliases, plurals, typos)
   lib/store/              memory (dev) and Supabase stores
   lib/client/             realtime hook, API client, synthesized audio, speech

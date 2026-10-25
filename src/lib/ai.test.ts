@@ -1,8 +1,9 @@
+import type { Experimental_DecisionModel } from "ai";
 import { MockLanguageModelV4, MockSpeechModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { harryPotterContent } from "@/packs/harry-potter/content";
 import { harryPotterTheme } from "@/packs/harry-potter/theme";
-import { cueMoment, judgeGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeHostLine, writeSurvey } from "./ai";
+import { cueMoment, matchGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeHostLine, writeSurvey } from "./ai";
 
 function mockModel(json: unknown, prompts: string[] = []) {
   return new MockLanguageModelV4({
@@ -76,35 +77,36 @@ describe("normalizeSurvey", () => {
   });
 });
 
-describe("judgeGuess", () => {
+type Decider = Extract<Experimental_DecisionModel, { doDecide: unknown }>;
+type DecideCall = Parameters<Decider["doDecide"]>[0];
+
+/** A stand-in decision model that picks `choice` and records what it was asked. */
+function mockDecider(choice: string, calls: DecideCall[] = []): Decider {
+  return {
+    specificationVersion: "v4",
+    provider: "mock",
+    modelId: "typesafe-ai/jev",
+    supportedQuestionTypes: ["choice"],
+    doDecide: async (options) => {
+      calls.push(options);
+      return { answers: { match: { type: "choice", choice } }, warnings: [] };
+    },
+  };
+}
+
+describe("matchGuess", () => {
   const round = harryPotterContent.fallbackRounds[1];
-  it("returns the matched index and the host's quip", async () => {
-    const result = await judgeGuess({
-      pack: harryPotterContent,
-      round,
-      guess: "the big snake",
-      playerName: "Ron",
-      model: mockModel({ index: 1, quip: "Hiss-terical, Ron!" }),
-    });
-    expect(result).toEqual({ index: 1, quip: "Hiss-terical, Ron!" });
+  it("asks the decision model to pick a board answer, with aliases", async () => {
+    const calls: DecideCall[] = [];
+    expect(await matchGuess({ round, guess: "the big snake", model: mockDecider("a1", calls) })).toBe(1);
+    const question = calls[0].questions.match;
+    expect(question.type).toBe("choice");
+    expect(question.type === "choice" && Object.keys(question.criteria)).toEqual(["none", ...round.answers.map((_, i) => `a${i}`)]);
+    expect(JSON.stringify(calls[0].state)).toContain("the big snake");
   });
-  it("tells the judge what's riding on the guess", async () => {
-    const prompts: string[] = [];
-    await judgeGuess({
-      pack: harryPotterContent,
-      round,
-      guess: "toaster",
-      playerName: "Ron",
-      moment: "A miss is their third strike.",
-      recent: ["Splendid!"],
-      model: mockModel({ index: -1, quip: "No." }, prompts),
-    });
-    expect(prompts[0]).toContain("A miss is their third strike.");
-    expect(prompts[0]).toContain("Splendid!");
-  });
-  it("treats -1 or out-of-range as no match", async () => {
-    const result = await judgeGuess({ pack: harryPotterContent, round, guess: "toaster", playerName: "Ron", model: mockModel({ index: 42, quip: "No." }) });
-    expect(result.index).toBeNull();
+  it("treats none as no match, and rejects options that aren't on the board", async () => {
+    expect(await matchGuess({ round, guess: "toaster", model: mockDecider("none") })).toBeNull();
+    await expect(matchGuess({ round, guess: "toaster", model: mockDecider("a42") })).rejects.toThrow();
   });
 });
 

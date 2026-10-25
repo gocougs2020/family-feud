@@ -2,7 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { getPackTheme } from "@/packs";
 import { getPackContent } from "@/packs/server";
-import { aiEnabled, cueMoment, judgeGuess, writeHostLine, writeRecap, writeSurvey } from "./ai";
+import { aiEnabled, cueMoment, matchGuess, writeHostLine, writeRecap, writeSurvey } from "./ai";
 import { signSeat, type Seat } from "./auth";
 import {
   addPlayer,
@@ -378,7 +378,8 @@ function describeStakes(state: GameState, turn: Turn, name: string): string {
 
 /**
  * Lock the guess (a plain answer, or a face-off buzz that carries one), judge
- * it (locally, then with AI), and apply the result. A buzz gets a slightly
+ * it (locally, then with the AI judge), have the host react, and apply the
+ * result. A buzz gets a slightly
  * longer beat so the buzzer and drum roll can land first.
  */
 async function judgeAnswer(
@@ -404,24 +405,28 @@ async function judgeAnswer(
   let index = localMatch(clean, survey.answers);
   let quip: string | undefined;
   if (aiEnabled()) {
-    try {
-      if (index == null) {
-        ({ index, quip } = await judgeGuess({ pack, round: survey, guess: clean, playerName: name, moment, recent: state.hostLog }));
-      } else {
-        // Matched without the AI judge; the AI still writes the reaction.
-        const answer = survey.answers[index];
-        const result = state.round.board[index].revealed
-          ? `"${clean}" is already on the board, so it counts as a miss.`
-          : `"${clean}" matches the number ${index + 1} answer, ${answer.text}, worth ${answer.points}.`;
-        quip = await writeHostLine({
-          pack,
-          moment: `${moment}\nResult: ${result} React to the guess as it's revealed and say what happens next.`,
-          facts: describeGame(state),
-          recent: state.hostLog,
-        });
+    if (index == null) {
+      try {
+        index = await matchGuess({ round: survey, guess: clean });
+      } catch (err) {
+        console.error("[feud] AI judge failed, treating as a miss:", err);
       }
+    }
+    try {
+      const result =
+        index == null
+          ? `"${clean}" isn't on the board.`
+          : state.round.board[index].revealed
+            ? `"${clean}" is already on the board, so it counts as a miss.`
+            : `"${clean}" matches the number ${index + 1} answer, ${survey.answers[index].text}, worth ${survey.answers[index].points}.`;
+      quip = await writeHostLine({
+        pack,
+        moment: `${moment}\nResult: ${result} React to the guess as it's revealed and say what happens next.`,
+        facts: describeGame(state),
+        recent: state.hostLog,
+      });
     } catch (err) {
-      console.error("[feud] AI judge or reaction failed:", err);
+      console.error("[feud] AI reaction failed:", err);
     }
     // Start voicing the reaction now, so it's ready the moment it's revealed.
     if (quip) void warmVoice(state.packId, quip);
