@@ -164,7 +164,7 @@ export function HostScreen({ code }: { code: string }) {
       speakLine({ id: lineId, text: lineText }, !onAir || !prefs.voice);
     };
     if (!linePending) return speak();
-    const t = setTimeout(speak, 5000);
+    const t = setTimeout(speak, 6500);
     return () => clearTimeout(t);
   }, [lineId, lineText, linePending, onAir, prefs.voice, speakLine]);
 
