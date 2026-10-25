@@ -50,11 +50,12 @@ export interface PackTheme {
 
 export type HostLineKey =
   | "lobby"
+  | "join"
   | "preparing"
   | "gameIntro"
   | "roundIntro"
   | "faceoff"
-  | "buzz"
+  | "noBuzz"
   | "topHit"
   | "hit"
   | "miss"
@@ -70,7 +71,9 @@ export type HostLineKey =
   | "tie";
 
 /**
- * Lines may use {name}, {team}, {other}, {answer}, {points}, {round}, {multiplier}.
+ * Canned host lines, used when AI is off or slow. With AI on, the host writes
+ * every line fresh. Lines may use {name}, {names}, {team}, {other}, {answer},
+ * {points}, {round}, {multiplier}.
  */
 export type HostLines = Record<HostLineKey, string[]>;
 

@@ -16,9 +16,10 @@ Built on Next.js, the Vercel AI SDK and AI Gateway, and Supabase. It ships with 
 - **Phone controller** (`/play/ABCD`): join with a name, switch teams, type-then-buzz face-offs (you type your answer and the big BUZZ button locks it in, so the race is to think of an answer), an answer box when it's your turn, play/pass, team steals, and haptic buzzes on your turn.
 - **AI host** (via the Vercel AI Gateway):
   - writes a fresh survey (questions, ranked answers, points and aliases) for every game, while players are still joining in the lobby
-  - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley", "the snake" is "Basilisk"), with an in-character quip
-  - writes a sign-off recap at the end of the game
-  - …and falls back to hand-written surveys and lines whenever AI is off or slow, so the game never stalls.
+  - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley", "the snake" is "Basilisk")
+  - writes every host line fresh, in character, for that moment of that game: greeting players by name as they join, the opening, reading each question aloud, reacting to every answer (and saying what's at stake next), and a spoken sign-off recap
+  - voices each line as soon as it's written, and the TV lets a line finish (or fades it out) rather than cutting the host off mid-word
+  - …and falls back to hand-written surveys and canned lines whenever AI is off or slow (a host line gets about 3 seconds), so the game never stalls.
 - **Host voice and music**: with AI on, the host's lines are voiced by **`fish-audio/drama-3`** through the AI Gateway, with per-pack delivery notes (Gilderoy Lockhart hosts the wizard pack; a punchy studio host does Classic). Pick a specific Fish Audio voice per pack with `AI_TTS_VOICE_<PACK_ID>`, e.g. `AI_TTS_VOICE_HARRY_POTTER`. Without AI, the browser's speech synthesis takes over. The original, procedurally composed music (a candle-lit waltz for the wizard pack, a studio groove for classic) is re-written from a random seed each game. Sound effects (ding, buzzer, drum roll, applause) are synthesized too. There are no audio files.
 - **Real rules**: face-off (top answer wins outright, otherwise the higher answer wins), play or pass, rotating turns so everyone answers, three strikes, team steal, and double/triple points in the late rounds.
 
@@ -111,7 +112,7 @@ src/
   components/play/        phone controller
   lib/engine.ts           all game rules as pure functions (unit-tested)
   lib/game-service.ts     orchestrates store + engine + AI
-  lib/ai.ts               survey writer, answer judge, recap, host TTS (AI SDK + Gateway)
+  lib/ai.ts               survey writer, answer judge, host lines, recap, host TTS (AI SDK + Gateway)
   lib/match.ts            fast local answer matching (aliases, plurals, typos)
   lib/store/              memory (dev) and Supabase stores
   lib/client/             realtime hook, API client, synthesized audio, speech

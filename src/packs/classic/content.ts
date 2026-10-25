@@ -2,11 +2,12 @@ import type { HostLines, PackContent } from "../types";
 
 const lines: HostLines = {
   lobby: ["Come on down! Grab your phone and join the game."],
+  join: ["Welcome, {names}!", "Give it up for {names}!"],
   preparing: ["Hang tight — we're tallying the survey results!"],
   gameIntro: ["Welcome to Family Feud! Tonight it's {team} against {other}!"],
   roundIntro: ["Round {round}! We surveyed 100 people, top answers are on the board..."],
-  faceoff: ["Let's play the face-off! Hands on your buzzers."],
-  buzz: ["{name} buzzed in first!"],
+  faceoff: ["Let's play the face-off! {names}, type your answer and hit that buzzer."],
+  noBuzz: ["Nobody buzzed! {name}, you're up."],
   topHit: ["Number one answer! Fantastic!"],
   hit: ["Good answer! Good answer!", "Survey says... there it is! {answer}!", "That's on the board!"],
   miss: ["Ohhh, survey says no.", "Not up there, {name}.", "Strike!"],

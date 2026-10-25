@@ -2,6 +2,7 @@
 // No I/O lives here, so it's easy to test and the same logic runs no matter
 // which store (memory or Supabase) is behind it.
 import type { HostLineKey, HostLines } from "@/packs/types";
+import { estimateSpeechMs } from "./captions";
 import type {
   GameSecret,
   GameSettings,
@@ -35,6 +36,10 @@ export const TIMERS = {
   /** extra time granted while the AI judge is thinking */
   judging: 15_000,
   preparing: 60_000,
+  /** allowance for fetching the host's voice before it starts speaking */
+  voiceLead: 3_000,
+  /** how recently someone joined for the host to still greet them */
+  greetWindow: 10_000,
 };
 
 export const LIMITS = {
@@ -65,10 +70,31 @@ function pick<T>(items: T[], rng: () => number): T {
   return items[Math.floor(rng() * items.length) % items.length];
 }
 
-function say(state: GameState, ctx: EngineCtx, key: HostLineKey, vars: Record<string, string | number> = {}): GameState {
+/**
+ * Give the host a line: the pack's canned one, plus a cue so the AI (when on)
+ * can write it fresh. `tail` is read out verbatim after it.
+ */
+function say(
+  state: GameState,
+  ctx: EngineCtx,
+  key: HostLineKey,
+  vars: Record<string, string | number> = {},
+  tail?: string,
+): GameState {
   const template = pick(ctx.lines[key] ?? [""], ctx.rng);
-  const text = template.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
-  return { ...state, hostLine: { id: ctx.id(), text } };
+  const text = [template.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? "")), tail].filter(Boolean).join(" ");
+  return { ...state, hostLine: { id: ctx.id(), text, cue: { key, vars, tail } } };
+}
+
+/**
+ * Hold a phase timer (round intro, round end) until the host can finish the
+ * current line, so the next line doesn't cut it off.
+ */
+export function fitDeadlineToLine(state: GameState, now: number): GameState {
+  if (state.deadline == null || !state.hostLine) return state;
+  if (state.phase !== "round_intro" && state.phase !== "round_end") return state;
+  const needed = now + estimateSpeechMs(state.hostLine.text) + TIMERS.voiceLead;
+  return needed > state.deadline ? { ...state, deadline: needed } : state;
 }
 
 /** Use an AI-written line instead of a canned one. */
@@ -142,7 +168,7 @@ export function createGameState(input: {
     event: null,
     hostLine: null,
   };
-  return say(state, ctx, "lobby");
+  return say(state, ctx, "lobby", { code: input.code });
 }
 
 export function addPlayer(
@@ -159,8 +185,15 @@ export function addPlayer(
   const counts = [teamPlayers(state, 0).length, teamPlayers(state, 1).length];
   const team: TeamIndex = counts[0] <= counts[1] ? 0 : 1;
   const player: PublicPlayer = { id: input.id, name, team, color: input.color, joinedAt: ctx.now };
-  const next = { ...state, players: [...state.players, player], vipId: state.vipId ?? player.id };
-  return emit(next, ctx, { kind: "join", playerId: player.id, team, text: name });
+  let next: GameState = { ...state, players: [...state.players, player], vipId: state.vipId ?? player.id };
+  next = emit(next, ctx, { kind: "join", playerId: player.id, team, text: name });
+  if (state.phase !== "lobby") return next;
+  // Greet everyone who's just arrived in one go, so a rush of joins isn't a string of cut-off hellos.
+  const recent = next.players.filter((p) => ctx.now - p.joinedAt <= TIMERS.greetWindow);
+  const names = recent.map((p) => p.name);
+  const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : name;
+  const teams = recent.map((p) => `${p.name} (${next.teams[p.team].name})`).join(", ");
+  return say(next, ctx, "join", { names: list, name, team: next.teams[team].name, joined: teams, players: next.players.length });
 }
 
 export function setTeam(state: GameState, playerId: string, team: TeamIndex): GameState {
@@ -262,10 +295,19 @@ export function beginRound(
     deadline: ctx.now + TIMERS.roundIntro + (firstRound ? 4_000 : 0),
   };
   next = emit(next, ctx, { kind: "round_start" });
-  const vars = { round: index + 1, multiplier: round.multiplier, team: state.teams[0].name, other: state.teams[1].name };
-  if (firstRound && secret.gameIntro) return withHostLine(next, ctx, secret.gameIntro);
-  if (survey.intro) return withHostLine(next, ctx, survey.intro);
-  return say(next, ctx, firstRound ? "gameIntro" : "roundIntro", vars);
+  const vars = {
+    round: index + 1,
+    rounds: state.settings.rounds,
+    multiplier: round.multiplier,
+    team: state.teams[0].name,
+    other: state.teams[1].name,
+  };
+  // The host always reads the question out, after the intro.
+  const written = [firstRound ? secret.gameIntro : undefined, survey.intro].filter(Boolean).join(" ");
+  next = written
+    ? withHostLine(next, ctx, `${written} ${survey.question}`)
+    : say(next, ctx, firstRound ? "gameIntro" : "roundIntro", vars, survey.question);
+  return fitDeadlineToLine(next, ctx.now);
 }
 
 function startFaceoff(state: GameState, ctx: EngineCtx): GameState {
@@ -285,7 +327,8 @@ function startFaceoff(state: GameState, ctx: EngineCtx): GameState {
     round: { ...round, faceoff: { playerIds: ids, answered: [] } },
     turn: makeTurn(ctx, "buzz", playerIds, null, TIMERS.buzz),
   };
-  return say(next, ctx, "faceoff");
+  const names = playerIds.map((id) => playerName(next, id));
+  return say(next, ctx, "faceoff", { names: names.join(" and "), name: names[0] ?? "", other: names[1] ?? "" });
 }
 
 /**
@@ -301,9 +344,9 @@ export function buzz(state: GameState, playerId: string, turnId: string, text: s
   if (!clean) throw new GameError("Type an answer first");
   const team = state.players.find((p) => p.id === playerId)?.team ?? 0;
   const answerTurn: Turn = { ...makeTurn(ctx, "faceoff_answer", [playerId], team, TIMERS.judging), judging: { playerId, text: clean } };
-  let next: GameState = { ...state, turn: answerTurn };
-  next = emit(next, ctx, { kind: "buzz", playerId, team, text: clean });
-  return say(next, ctx, "buzz", { name: playerName(state, playerId) });
+  // No host line yet: the reaction to the answer covers the buzz too.
+  const next: GameState = { ...state, turn: answerTurn };
+  return emit(next, ctx, { kind: "buzz", playerId, team, text: clean });
 }
 
 /** Lock in a guess while it's judged, so the TV can do "Survey says…". */
@@ -416,7 +459,7 @@ export function resolveGuess(state: GameState, secret: GameSecret, input: GuessI
       if (hitIndex != null) {
         next = emit(next, ctx, { kind: "hit", playerId: input.playerId ?? undefined, team, answerIndex: hitIndex, text: input.text });
         if (next.round!.board.every((s) => s.revealed)) {
-          return awardRound(next, secret, team, ctx, "sweep");
+          return awardRound(next, secret, team, ctx, "sweep", input.quip);
         }
         next = react(hitIndex === 0 ? "topHit" : "hit");
         return nextAnswerTurn(next, team, ctx);
@@ -486,8 +529,10 @@ function startSteal(state: GameState, control: TeamIndex, ctx: EngineCtx, quip?:
   const stealTeam = other(control);
   const roster = teamPlayers(state, stealTeam).map((p) => p.id);
   let next: GameState = { ...state, phase: "steal" };
-  next = say(next, ctx, "strikeOut", { team: state.teams[control].name, other: state.teams[stealTeam].name });
-  if (quip) next = withHostLine(next, ctx, `${quip} ${next.hostLine?.text ?? ""}`.trim());
+  // An AI quip is written knowing it's the third strike, so it announces the steal itself.
+  next = quip
+    ? withHostLine(next, ctx, quip)
+    : say(next, ctx, "strikeOut", { team: state.teams[control].name, other: state.teams[stealTeam].name });
   if (!roster.length) return next; // nobody to steal; tick will award
   return { ...next, turn: makeTurn(ctx, "steal", roster, stealTeam, TIMERS.steal) };
 }
@@ -511,9 +556,8 @@ function awardRound(
     deadline: ctx.now + TIMERS.roundEnd,
     round: { ...revealAll(round, secret), winner: team, awarded: round.bank },
   };
-  next = say(next, ctx, line, { team: state.teams[team].name, points: round.bank });
-  if (quip) next = withHostLine(next, ctx, `${quip} ${next.hostLine?.text ?? ""}`.trim());
-  return next;
+  next = quip ? withHostLine(next, ctx, quip) : say(next, ctx, line, { team: state.teams[team].name, points: round.bank });
+  return fitDeadlineToLine(next, ctx.now);
 }
 
 export function endGame(state: GameState, ctx: EngineCtx): GameState {
@@ -521,7 +565,8 @@ export function endGame(state: GameState, ctx: EngineCtx): GameState {
   const winner: TeamIndex | "tie" = a.score === b.score ? "tie" : a.score > b.score ? 0 : 1;
   let next: GameState = { ...state, phase: "game_over", turn: null, deadline: null, winner };
   next = emit(next, ctx, { kind: "game_over", team: winner === "tie" ? undefined : winner });
-  return winner === "tie" ? say(next, ctx, "tie") : say(next, ctx, "gameOver", { team: state.teams[winner].name });
+  const vars = { team: winner === "tie" ? a.name : state.teams[winner].name, other: winner === "tie" ? b.name : state.teams[other(winner)].name };
+  return say(next, ctx, winner === "tie" ? "tie" : "gameOver", vars);
 }
 
 /** Reset to the lobby with the same players for another game. */
@@ -543,7 +588,7 @@ export function resetForReplay(state: GameState, ctx: EngineCtx, teams?: [TeamPr
       { ...(teams?.[1] ?? state.teams[1]), score: 0 },
     ],
   };
-  return say(next, ctx, "lobby");
+  return say(next, ctx, "lobby", { code: state.code });
 }
 
 // ---------------------------------------------------------------- timers
@@ -576,7 +621,7 @@ export function tick(state: GameState, secret: GameSecret | null, ctx: EngineCtx
           ...state,
           turn: makeTurn(ctx, "faceoff_answer", [chosen], team, TIMERS.faceoffReply),
         };
-        return withHostLine(next, ctx, `Nobody buzzed! ${playerName(state, chosen)}, you're up.`);
+        return say(next, ctx, "noBuzz", { name: playerName(state, chosen) });
       }
       return timeoutGuess(state, secret, turn, ctx);
     }

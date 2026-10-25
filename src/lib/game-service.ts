@@ -2,7 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { getPackTheme } from "@/packs";
 import { getPackContent } from "@/packs/server";
-import { aiEnabled, judgeGuess, writeRecap, writeSurvey } from "./ai";
+import { aiEnabled, cueMoment, judgeGuess, writeHostLine, writeRecap, writeSurvey } from "./ai";
 import { signSeat, type Seat } from "./auth";
 import {
   addPlayer,
@@ -10,6 +10,7 @@ import {
   choosePlayPass,
   createGameState,
   endGame,
+  fitDeadlineToLine,
   GameError,
   markJudging,
   removePlayer,
@@ -19,12 +20,15 @@ import {
   setTeamName,
   startGame,
   surveyReady,
+  teamPlayers,
   tick,
+  withHostLine,
   type EngineCtx,
 } from "./engine";
 import { localMatch } from "./match";
 import { getStore } from "./store";
-import type { GameSecret, GameState, StoredGame, TeamIndex, TeamPreset } from "./types";
+import type { GameSecret, GameState, StoredGame, TeamIndex, TeamPreset, Turn } from "./types";
+import { warmVoice } from "./voice";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
@@ -55,6 +59,90 @@ export async function loadGame(code: string): Promise<StoredGame> {
   return game;
 }
 
+// ------------------------------------------------------------ host lines
+//
+// The engine gives each canned line a cue. With AI on, that line is held as
+// "pending" (screens wait for it) while the AI writes a fresh one for this
+// moment of this game; if the AI is slow, the canned text goes out instead.
+// Lines that are already AI-written (survey intros, judge reactions, recaps)
+// go straight out. Either way the voice starts generating right away.
+
+const logLine = (state: GameState, text: string): GameState => ({ ...state, hostLog: [...(state.hostLog ?? []), text].slice(-6) });
+
+/** Hold a new cued line for the AI, or log a finished one. */
+function prepareLine(prev: GameState | null, next: GameState): GameState {
+  const line = next.hostLine;
+  if (!line || line.id === prev?.hostLine?.id) return next;
+  if (line.cue && aiEnabled()) return { ...next, hostLine: { ...line, pending: true } };
+  return logLine(next, line.text);
+}
+
+/** Every game write goes through here, so no host line is missed. */
+async function mutateGame(id: string, fn: (state: GameState, ctx: EngineCtx) => GameState | null) {
+  let before: string | undefined;
+  const result = await getStore().mutate(id, (s) => {
+    before = s.hostLine?.id;
+    const next = fn(s, ctxFor(s));
+    return next && prepareLine(s, next);
+  });
+  afterLine(id, result.state, before);
+  return result;
+}
+
+function afterLine(id: string, state: GameState, before?: string) {
+  const line = state.hostLine;
+  if (!aiEnabled() || !line || line.id === before) return;
+  after(() => (line.pending ? finishLine(id, line.id) : warmVoice(state.packId, line.text)));
+}
+
+/** A short, public summary of the game for the AI host. */
+function describeGame(state: GameState): string {
+  const [a, b] = state.teams;
+  const facts = [`Teams: ${a.name} (${a.score} points) vs ${b.name} (${b.score} points).`];
+  for (const t of [0, 1] as TeamIndex[]) {
+    const names = teamPlayers(state, t).map((p) => p.name);
+    if (names.length) facts.push(`${state.teams[t].name} players: ${names.join(", ")}.`);
+  }
+  const round = state.round;
+  if (round && state.phase !== "lobby") {
+    facts.push(`Round ${round.index + 1} of ${state.settings.rounds}${round.multiplier > 1 ? ` (${round.multiplier}x points)` : ""}: "${round.question}"`);
+    const shown = round.board.filter((slot) => slot.revealed && !slot.auto).map((slot) => `${slot.text} (${slot.points})`);
+    facts.push(`On the board: ${shown.join(", ") || "nothing yet"}; ${round.board.filter((slot) => !slot.revealed).length} still hidden. Bank: ${round.bank}. Strikes: ${round.strikes}.`);
+    if (round.control != null) facts.push(`${state.teams[round.control].name} control the board.`);
+    const last = round.guesses[round.guesses.length - 1];
+    if (last) facts.push(`Last guess: ${state.players.find((p) => p.id === last.playerId)?.name ?? "Someone"} said "${last.text || "(nothing)"}" (${last.result}).`);
+  }
+  return facts.join("\n");
+}
+
+/** Have the AI write a pending line, then release it. */
+async function finishLine(id: string, lineId: string) {
+  const store = getStore();
+  const game = await store.getById(id);
+  const line = game?.state.hostLine;
+  if (!game || !line?.pending || line.id !== lineId || !line.cue) return;
+  const { state } = game;
+  let text = line.text;
+  try {
+    const written = await writeHostLine({
+      pack: getPackContent(state.packId, state.topic),
+      moment: cueMoment(line.cue),
+      facts: describeGame(state),
+      recent: state.hostLog,
+    });
+    text = [written, line.cue.tail].filter(Boolean).join(" ");
+  } catch (err) {
+    console.warn("[feud] AI host line failed, using the canned one:", err);
+  }
+  const voiced = warmVoice(state.packId, text);
+  await store.mutate(id, (s) =>
+    s.hostLine?.id === lineId && s.hostLine.pending
+      ? fitDeadlineToLine(logLine({ ...s, hostLine: { id: lineId, text } }, text), Date.now())
+      : null,
+  );
+  await voiced;
+}
+
 // ------------------------------------------------------------ create & join
 
 export async function createGame(input: { packId: string; topic?: string; rounds?: number }) {
@@ -66,16 +154,17 @@ export async function createGame(input: { packId: string; topic?: string; rounds
 
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = randomCode();
-    const state = createGameState({
+    const state = prepareLine(null, createGameState({
       code,
       packId: theme.id,
       topic,
       settings: { rounds, answerSeconds: 30 },
       teams: pickTeams(theme.id),
       ctx: { now: Date.now(), rng: Math.random, id: makeId, lines: getPackContent(theme.id, topic).lines },
-    });
+    }));
     try {
       const game = await store.create(code, state);
+      afterLine(game.id, game.state);
       // Write the survey while people are still joining.
       after(() => prepareSurvey(game.id));
       return { code, gameId: game.id, hostToken: signSeat({ gameId: game.id, role: "host" }) };
@@ -91,9 +180,9 @@ export async function joinGame(code: string, name: string) {
   const game = await loadGame(code);
   const theme = getPackTheme(game.state.packId);
   const playerId = makeId();
-  await getStore().mutate(game.id, (state) => {
+  await mutateGame(game.id, (state, ctx) => {
     const color = theme.playerColors[state.players.length % theme.playerColors.length];
-    return addPlayer(state, { id: playerId, name, color }, ctxFor(state));
+    return addPlayer(state, { id: playerId, name, color }, ctx);
   });
   return { playerId, token: signSeat({ gameId: game.id, role: "player", playerId }) };
 }
@@ -136,7 +225,7 @@ export async function prepareSurvey(gameId: string, opts: { forceBuiltIn?: boole
   const latest = await store.getById(gameId);
   if (!latest || latest.state.prep === "ready") return;
   await store.setSecret(gameId, secret);
-  await store.mutate(gameId, (s) => (s.prep === "ready" ? null : surveyReady(s, secret, ctxFor(s))));
+  await mutateGame(gameId, (s, ctx) => (s.prep === "ready" ? null : surveyReady(s, secret, ctx)));
 }
 
 // ------------------------------------------------------------ actions
@@ -174,8 +263,8 @@ export async function performAction(code: string, seat: Seat | null, action: Act
   let finished = false;
 
   const run = (fn: (state: GameState, ctx: EngineCtx) => GameState | null) =>
-    store.mutate(id, (state) => {
-      const next = fn(state, ctxFor(state));
+    mutateGame(id, (state, ctx) => {
+      const next = fn(state, ctx);
       if (next && next.phase === "game_over" && state.phase !== "game_over") finished = true;
       return next;
     });
@@ -200,7 +289,7 @@ export async function performAction(code: string, seat: Seat | null, action: Act
     case "buzz": {
       const playerId = requirePlayer(seat, game.state);
       const text = String(action.text ?? "");
-      result = await judgeAnswer(id, playerId, (s, ctx) => buzz(s, playerId, action.turnId, text, ctx), 2600);
+      result = await judgeAnswer(id, playerId, (s, ctx) => buzz(s, playerId, action.turnId, text, ctx), 2200);
       break;
     }
     case "play_pass": {
@@ -251,10 +340,46 @@ export async function performAction(code: string, seat: Seat | null, action: Act
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** What's riding on a guess, so the host's reaction can say what happens next. */
+function describeStakes(state: GameState, turn: Turn, name: string): string {
+  const round = state.round!;
+  const team: TeamIndex = turn.team ?? 0;
+  const rival: TeamIndex = team === 0 ? 1 : 0;
+  const [us, them] = [state.teams[team].name, state.teams[rival].name];
+  const nameOf = (pid: string | null | undefined) => state.players.find((p) => p.id === pid)?.name ?? "Someone";
+  switch (turn.kind) {
+    case "faceoff_answer": {
+      const first = round.faceoff.answered[0];
+      if (first) {
+        const theirs = first.answerIndex == null ? "wasn't on the board" : `was the number ${first.answerIndex + 1} answer`;
+        return `Face-off: ${name} (${us}) answers second. ${nameOf(first.playerId)}'s answer ${theirs}. The higher answer wins the face-off, and that player chooses to play or pass.`;
+      }
+      const opponent = round.faceoff.playerIds[rival];
+      const buzzed = state.event?.kind === "buzz" ? "slammed the buzzer first" : "has to answer first";
+      return `Face-off: ${name} (${us}) ${buzzed}. The number one answer wins the face-off outright. ${opponent ? `Otherwise ${nameOf(opponent)} (${them}) gets a chance to beat it, so hand over to them.` : `Otherwise ${us} still win it.`}`;
+    }
+    case "answer": {
+      const hidden = round.board.filter((slot) => !slot.revealed).length;
+      const miss =
+        round.strikes === 2
+          ? `A miss or a repeat is their third strike, and then ${them} get one chance to steal, so tell them to huddle up.`
+          : "A miss or a repeat is a strike.";
+      const sweep = hidden === 1 ? ` Only one answer is left: finding it clears the board and wins ${us} the round.` : "";
+      return `${name} is answering for ${us}, who control the board with ${round.strikes} strike(s). ${miss}${sweep}`;
+    }
+    case "steal": {
+      const control = state.teams[round.control ?? rival].name;
+      return `Steal attempt: ${name} answers for ${us}. If it's on the board, ${us} steal the round's points. If not, ${control} keep the ${round.bank} points.`;
+    }
+    default:
+      return "";
+  }
+}
+
 /**
  * Lock the guess (a plain answer, or a face-off buzz that carries one), judge
- * it (locally, then with AI), and apply the result. A buzz gets a longer
- * beat so the buzzer sound and the host's "buzzed in" line can land first.
+ * it (locally, then with AI), and apply the result. A buzz gets a slightly
+ * longer beat so the buzzer and drum roll can land first.
  */
 async function judgeAnswer(
   id: string,
@@ -263,33 +388,51 @@ async function judgeAnswer(
   beat = 1800,
 ) {
   const store = getStore();
-  const marked = await store.mutate(id, (s) => lock(s, ctxFor(s)));
+  const marked = await mutateGame(id, lock);
   const startedAt = Date.now();
   const secret = await store.getSecret(id);
   const state = marked.state;
-  const turnId = state.turn?.id;
-  const clean = state.turn?.judging?.text ?? "";
-  if (!secret || !state.round || !turnId) throw new GameError("The survey isn't ready yet", 409);
+  const turn = state.turn;
+  const clean = turn?.judging?.text ?? "";
+  if (!secret || !state.round || !turn) throw new GameError("The survey isn't ready yet", 409);
+  const turnId = turn.id;
   const survey = secret.rounds[state.round.index];
+  const pack = getPackContent(state.packId, state.topic);
+  const name = state.players.find((p) => p.id === playerId)?.name ?? "A player";
+  const moment = describeStakes(state, turn, name);
 
   let index = localMatch(clean, survey.answers);
   let quip: string | undefined;
-  if (index == null && aiEnabled()) {
+  if (aiEnabled()) {
     try {
-      const pack = getPackContent(state.packId, state.topic);
-      const name = state.players.find((p) => p.id === playerId)?.name ?? "A player";
-      ({ index, quip } = await judgeGuess({ pack, round: survey, guess: clean, playerName: name }));
+      if (index == null) {
+        ({ index, quip } = await judgeGuess({ pack, round: survey, guess: clean, playerName: name, moment, recent: state.hostLog }));
+      } else {
+        // Matched without the AI judge; the AI still writes the reaction.
+        const answer = survey.answers[index];
+        const result = state.round.board[index].revealed
+          ? `"${clean}" is already on the board, so it counts as a miss.`
+          : `"${clean}" matches the number ${index + 1} answer, ${answer.text}, worth ${answer.points}.`;
+        quip = await writeHostLine({
+          pack,
+          moment: `${moment}\nResult: ${result} React to the guess as it's revealed and say what happens next.`,
+          facts: describeGame(state),
+          recent: state.hostLog,
+        });
+      }
     } catch (err) {
-      console.error("[feud] AI judge failed, treating as a miss:", err);
+      console.error("[feud] AI judge or reaction failed:", err);
     }
+    // Start voicing the reaction now, so it's ready the moment it's revealed.
+    if (quip) void warmVoice(state.packId, quip);
   }
 
   // Give the TV a beat for "Survey says…".
   await sleep(Math.max(0, beat - (Date.now() - startedAt)));
   let finished = false;
-  const result = await store.mutate(id, (s) => {
+  const result = await mutateGame(id, (s, ctx) => {
     if (s.turn?.id !== turnId) return null; // timed out or skipped meanwhile
-    const next = resolveGuess(s, secret, { turnId, playerId, text: clean, answerIndex: index, quip }, ctxFor(s));
+    const next = resolveGuess(s, secret, { turnId, playerId, text: clean, answerIndex: index, quip }, ctx);
     finished = next.phase === "game_over";
     return next;
   });
@@ -303,7 +446,8 @@ async function addRecap(id: string) {
     const game = await store.getById(id);
     if (!game || game.state.phase !== "game_over" || game.state.recap) return;
     const recap = await writeRecap({ pack: getPackContent(game.state.packId, game.state.topic), state: game.state });
-    await store.mutate(id, (s) => (s.phase === "game_over" && !s.recap ? { ...s, recap } : null));
+    // The host says the sign-off too, after the game-over line.
+    await mutateGame(id, (s, ctx) => (s.phase === "game_over" && !s.recap ? withHostLine({ ...s, recap }, ctx, recap) : null));
   } catch (err) {
     console.error("[feud] recap failed:", err);
   }

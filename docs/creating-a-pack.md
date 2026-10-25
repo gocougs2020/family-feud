@@ -56,8 +56,9 @@ export const spaceContent: PackContent = {
     },
   ],
   lines: {
-    // canned lines used whenever the AI is off or slow.
-    // Placeholders: {name} {team} {other} {answer} {points} {round}
+    // canned lines used whenever the AI is off or slow. With AI on, the host
+    // writes every line fresh from your persona; these are the fallback.
+    // Placeholders: {name} {names} {team} {other} {answer} {points} {round}
     lobby: ["Welcome aboard! Grab your phones."],
     // ...every HostLineKey needs at least one line
   },
