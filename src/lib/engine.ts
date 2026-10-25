@@ -431,7 +431,9 @@ export function buzz(state: GameState, playerId: string, turnId: string, text: s
  * robes. Survey says…". The reveal waits for the TV to finish saying it.
  */
 function announceGuess(state: GameState, turn: Turn, playerId: string, text: string, ctx: EngineCtx): GameState {
-  const line = { id: ctx.id(), text: `${playerName(state, playerId)} says ${text}. Survey says…` };
+  // Square brackets are delivery cues for the voice, so players can't type their own.
+  const said = (s: string) => s.replace(/[[\]]/g, "");
+  const line = { id: ctx.id(), text: `${said(playerName(state, playerId))} says ${said(text)}. [dramatic pause] Survey says…` };
   return { ...state, hostLine: line, turn: { ...turn, judging: { playerId, text, lineId: line.id } } };
 }
 

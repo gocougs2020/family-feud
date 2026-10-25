@@ -33,7 +33,7 @@ import {
   withHostLine,
   type EngineCtx,
 } from "./engine";
-import { estimateSpeechMs } from "./captions";
+import { estimateSpeechMs, plainText } from "./captions";
 import { localMatch } from "./match";
 import { getStore } from "./store";
 import type { GameSecret, GameState, StoredGame, TeamIndex, TeamPreset, Turn } from "./types";
@@ -490,7 +490,7 @@ async function judgeAnswer(id: string, playerId: string, lock: (state: GameState
             : `"${clean}" matches the number ${index + 1} answer, ${survey.answers[index].text}, worth ${survey.answers[index].points}.`;
       quip = await writeHostLine({
         pack,
-        moment: `${moment}\nYou've just said "${announcement}" and the board is revealing the result. Result: ${result}\nReact to it and say what happens next. Don't repeat the guess announcement or say "survey says" again.`,
+        moment: `${moment}\nYou've just said "${plainText(announcement)}" and the board is revealing the result. Result: ${result}\nReact to it and say what happens next. Don't repeat the guess announcement or say "survey says" again.`,
         facts: describeGame(state),
         recent: state.hostLog,
       });

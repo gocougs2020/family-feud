@@ -243,7 +243,7 @@ describe("engine", () => {
     s = lineDone(s, secret, s.turn!.heldFor!, ctx)!;
     const buzzed = buzz(s, "harry", s.turn!.id, " robes ", ctx);
     // Read verbatim, never rewritten by the AI.
-    expect(buzzed.hostLine?.text).toBe("Harry says robes. Survey says…");
+    expect(buzzed.hostLine?.text).toBe("Harry says robes. [dramatic pause] Survey says…");
     expect(buzzed.hostLine?.cue).toBeUndefined();
     expect(buzzed.turn?.judging).toEqual({ playerId: "harry", text: "robes", lineId: buzzed.hostLine!.id });
     ctx.advance(2_000);

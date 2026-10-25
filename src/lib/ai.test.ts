@@ -154,21 +154,33 @@ describe("writeHostLine", () => {
 });
 
 describe("speakHostLine", () => {
-  it("sends the line and the pack's delivery notes to the speech model", async () => {
-    const calls: { text: string; instructions?: string; voice?: string }[] = [];
-    const model = new MockSpeechModelV4({
-      modelId: "fish-audio/drama-3",
+  const speechModel = (modelId: string, calls: { text: string; instructions?: string; voice?: string }[]) =>
+    new MockSpeechModelV4({
+      modelId,
       doGenerate: async (options) => {
         calls.push(options);
-        return { audio: new Uint8Array([73, 68, 51]), warnings: [], response: { timestamp: new Date(), modelId: "fish-audio/drama-3" } };
+        return { audio: new Uint8Array([73, 68, 51]), warnings: [], response: { timestamp: new Date(), modelId } };
       },
     });
+
+  it("gives Fish Audio the pack's delivery as inline cues, not instructions", async () => {
+    const calls: { text: string; instructions?: string; voice?: string }[] = [];
     process.env.AI_TTS_VOICE_HARRY_POTTER = "voice-123";
-    const clip = await speakHostLine("Survey says!", harryPotterTheme.voice, { packId: "harry-potter", model });
+    const clip = await speakHostLine("Ron says rat. [dramatic pause] Survey says…", harryPotterTheme.voice, {
+      packId: "harry-potter",
+      model: speechModel("fish-audio/drama-3", calls),
+    });
     delete process.env.AI_TTS_VOICE_HARRY_POTTER;
     expect(clip.bytes).toEqual(new Uint8Array([73, 68, 51]));
     expect(clip.mediaType).toMatch(/^audio\//);
-    expect(calls[0]).toMatchObject({ text: "Survey says!", instructions: harryPotterTheme.voice.style, voice: "voice-123" });
+    expect(calls[0]).toMatchObject({ text: `[${harryPotterTheme.voice.cue}] Ron says rat. [dramatic pause] Survey says…`, voice: "voice-123" });
+    expect(calls[0].instructions).toBeUndefined();
+  });
+
+  it("gives other speech models the plain line and the delivery notes", async () => {
+    const calls: { text: string; instructions?: string }[] = [];
+    await speakHostLine("[scoffs] Not even close.", harryPotterTheme.voice, { model: speechModel("openai/tts-1", calls) });
+    expect(calls[0]).toMatchObject({ text: "Not even close.", instructions: harryPotterTheme.voice.style });
   });
 
   it("picks a per-pack voice before the global one", () => {

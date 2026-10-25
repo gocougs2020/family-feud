@@ -28,6 +28,7 @@ export const classicTheme: PackTheme = {
   music: "game-show",
   voice: {
     style: "An upbeat, charismatic American TV game show host: big energy, quick and punchy, playing to the studio audience.",
+    cue: "upbeat, big-energy game show host",
     lang: "en-US",
     rate: 1.05,
     pitch: 1,

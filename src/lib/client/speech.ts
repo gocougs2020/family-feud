@@ -1,6 +1,6 @@
 "use client";
 
-import { estimateSpeechMs } from "@/lib/captions";
+import { estimateSpeechMs, plainText } from "@/lib/captions";
 import type { PackTheme } from "@/packs/types";
 
 // The host's voice. When AI is on, the TV fetches each line from the AI
@@ -127,7 +127,8 @@ export class HostVoice {
   }
 
   private browserSpeak(synth: SpeechSynthesis, line: Line, cfg: Voice, hooks: Hooks) {
-    const utterance = new SpeechSynthesisUtterance(line.text);
+    const said = plainText(line.text);
+    const utterance = new SpeechSynthesisUtterance(said);
     const voice = chooseVoice(cfg);
     if (voice) utterance.voice = voice;
     utterance.lang = voice?.lang ?? cfg.lang;
@@ -152,7 +153,7 @@ export class HostVoice {
       const startedAt = Date.now();
       this.speechEndsAt = startedAt + estimate;
       this.tick(() =>
-        hooks.onProgress?.(line, spokenTo >= 0 ? spokenTo / line.text.length : (Date.now() - startedAt) / estimate),
+        hooks.onProgress?.(line, spokenTo >= 0 ? spokenTo / said.length : (Date.now() - startedAt) / estimate),
       );
     };
     utterance.onend = () => {
