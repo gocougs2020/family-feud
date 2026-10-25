@@ -235,6 +235,10 @@ function PhaseView({ state, me, act, serverNow }: { state: GameState; me: Public
   const mine = !!turn?.playerIds.includes(me.id);
   const name = (id?: string) => state.players.find((p) => p.id === id)?.name ?? "Someone";
   const question = state.round && <p className="text-center text-lg font-semibold leading-snug">{state.round.question}</p>;
+  // What a face-off player has typed, kept for their reply if the other player buzzes first.
+  const [draft, setDraft] = useState({ round: -1, text: "" });
+  const faceoffDraft = draft.round === state.roundIndex ? draft.text : "";
+  const saveDraft = (text: string) => setDraft({ round: state.roundIndex, text });
 
   switch (state.phase) {
     case "lobby":
@@ -255,13 +259,20 @@ function PhaseView({ state, me, act, serverNow }: { state: GameState; me: Public
         return mine ? (
           <>
             {question}
-            <BuzzButton onBuzz={() => act({ type: "buzz", turnId: turn.id })} />
-            <p className="text-center text-sm opacity-70">You&apos;re in the face-off! First to buzz answers first.</p>
+            <BuzzIn
+              key={turn.id}
+              text={faceoffDraft}
+              onChange={saveDraft}
+              onBuzz={(text) => act({ type: "buzz", turnId: turn.id, text })}
+              deadline={turn.deadline}
+              serverNow={serverNow}
+            />
+            <p className="text-center text-sm opacity-70">You&apos;re in the face-off! Type your answer, then buzz to lock it in. Fastest buzz goes first.</p>
           </>
         ) : (
           <>
             {question}
-            <Big sub="Watch the TV — first to buzz gets to answer.">
+            <Big sub="Watch the TV — first to type an answer and buzz in goes first.">
               {turn.playerIds.map(name).join(" vs ")}
             </Big>
           </>
@@ -270,7 +281,16 @@ function PhaseView({ state, me, act, serverNow }: { state: GameState; me: Public
       return mine && turn ? (
         <>
           {question}
-          <AnswerBox key={turn.id} state={state} turnId={turn.id} act={act} serverNow={serverNow} prompt="Your face-off answer" />
+          <AnswerBox
+            key={turn.id}
+            state={state}
+            turnId={turn.id}
+            act={act}
+            serverNow={serverNow}
+            total={TIMERS.faceoffReply}
+            initialText={faceoffDraft}
+            prompt="Your face-off answer"
+          />
         </>
       ) : (
         <>
@@ -419,18 +439,72 @@ function LobbyControls({ state, me, act }: { state: GameState; me: PublicPlayer;
   );
 }
 
-function BuzzButton({ onBuzz }: { onBuzz: () => void }) {
+function BuzzIn({
+  text,
+  onChange,
+  onBuzz,
+  deadline,
+  serverNow,
+}: {
+  text: string;
+  onChange: (text: string) => void;
+  onBuzz: (text: string) => Promise<boolean>;
+  deadline: number;
+  serverNow: () => number;
+}) {
   const [pressed, setPressed] = useState(false);
+  const sending = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  const ready = !!text.trim();
+
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
+
+  const fire = async () => {
+    if (sending.current || !ready) return;
+    sending.current = true;
+    setPressed(true);
+    navigator.vibrate?.(60);
+    if (!(await onBuzz(text))) {
+      sending.current = false;
+      setPressed(false);
+    }
+  };
+
   return (
-    <div className="flex flex-1 items-center justify-center">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void fire();
+      }}
+      className="flex flex-col items-center gap-4"
+    >
+      <div className="flex w-full items-center gap-3">
+        <input
+          ref={input}
+          value={text}
+          onChange={(e) => onChange(e.target.value)}
+          maxLength={LIMITS.answerLength}
+          enterKeyHint="send"
+          autoComplete="off"
+          autoCorrect="on"
+          disabled={pressed}
+          placeholder="Type your answer…"
+          className="min-w-0 flex-1 rounded-xl border-2 border-white/15 bg-black/40 px-4 py-4 text-xl outline-none focus:border-accent"
+        />
+        <Countdown deadline={deadline} total={TIMERS.buzz} serverNow={serverNow} size={48} />
+      </div>
       <button
-        onPointerDown={() => {
-          if (pressed) return;
-          setPressed(true);
-          navigator.vibrate?.(60);
-          onBuzz();
+        type="button"
+        disabled={!ready || pressed}
+        // Pointer-down, not click: every millisecond counts, and it fires before the keyboard closes.
+        onPointerDown={(e) => {
+          e.preventDefault();
+          void fire();
         }}
-        className="pulse-ring font-display grid size-64 place-items-center rounded-full text-5xl text-white transition active:scale-90"
+        onClick={() => void fire()}
+        className={`font-display grid size-48 place-items-center rounded-full text-5xl text-white transition active:scale-90 disabled:opacity-40 ${ready && !pressed ? "pulse-ring" : ""}`}
         style={{
           background: "radial-gradient(circle at 35% 30%, #ff8a80, var(--c-strike) 55%, #7a0d06)",
           boxShadow: "0 14px 0 #5a0904, 0 20px 40px rgba(0,0,0,0.5)",
@@ -438,7 +512,8 @@ function BuzzButton({ onBuzz }: { onBuzz: () => void }) {
       >
         {pressed ? "…" : "BUZZ!"}
       </button>
-    </div>
+      {!ready && <p className="-mt-1 text-sm opacity-60">Type an answer to unlock the buzzer</p>}
+    </form>
   );
 }
 
@@ -449,6 +524,7 @@ function AnswerBox({
   serverNow,
   prompt,
   total,
+  initialText = "",
 }: {
   state: GameState;
   turnId: string;
@@ -456,8 +532,9 @@ function AnswerBox({
   serverNow: () => number;
   prompt: string;
   total?: number;
+  initialText?: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [sent, setSent] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const judging = state.turn?.judging;
