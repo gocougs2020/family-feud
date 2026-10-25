@@ -65,7 +65,7 @@ Set these on your Vercel project (Production and Preview), then redeploy:
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Project Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Project Settings → API Keys → publishable (or legacy `anon`) key |
-| `SUPABASE_SECRET_KEY` | Project Settings → API Keys → secret (or legacy `service_role`) key |
+| `SUPABASE_SECRET_KEY` | Project Settings → API Keys → secret (or legacy `service_role`) key. Copy it from the dashboard: the Supabase CLI shows new-style secret keys masked. |
 | `POSTGRES_URL_NON_POOLING` | Connect → Session pooler connection string (used only to run migrations at build time) |
 | `SESSION_SECRET` *(optional)* | Any long random string. It defaults to the Supabase secret key. |
 
