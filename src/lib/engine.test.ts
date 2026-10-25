@@ -135,6 +135,7 @@ describe("localMatch", () => {
     expect(localMatch("house elf", answers)).toBeNull();
     const teachers = [{ text: "Snape", points: 9, aliases: [] }];
     expect(localMatch("snakes", teachers)).toBeNull();
+    expect(localMatch("wand", [{ text: "Lumos", points: 22, aliases: ["wand lighting charm"] }])).toBeNull();
     expect(localMatch("", answers)).toBeNull();
   });
 });

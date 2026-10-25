@@ -49,8 +49,9 @@ function scoreCandidate(guess: string, candidate: string): number {
   const g = guess.split(" ");
   const c = candidate.split(" ");
 
-  // "hermione" vs "hermione granger": every guess word appears in the answer.
-  if (g.every((w) => w.length >= 3 && c.includes(w))) return 0.85;
+  // "hermione" vs "hermione granger": every guess word appears in the answer,
+  // covering at least half of it (so "wand" doesn't match "wand lighting charm").
+  if (g.length * 2 >= c.length && g.every((w) => w.length >= 3 && c.includes(w))) return 0.85;
   // "a big snake" vs "snake": the whole answer appears in a short guess.
   if (c.every((w) => g.includes(w)) && g.length <= c.length + 2) return 0.8;
 
