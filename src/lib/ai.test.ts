@@ -120,15 +120,13 @@ describe("matchGuess", () => {
 describe("writeHostLine", () => {
   it("writes a fresh line for the moment and tidies it for speech", async () => {
     const prompts: string[] = [];
-    const reasoning: unknown[] = [];
     const line = await writeHostLine({
       pack: harryPotterContent,
       moment: cueMoment({ key: "join", vars: { joined: "Luna (Ravenclaw)", players: 3 } }),
       facts: "Teams: Ravenclaw vs Hufflepuff.",
       recent: ["Welcome, Harry!"],
-      model: mockModel(' "Luna! *beams* Ravenclaw are lucky to have you." ', prompts, reasoning),
+      model: mockModel(' "Luna! *beams* Ravenclaw are lucky to have you." ', prompts),
     });
-    expect(reasoning).toEqual(["low"]);
     expect(line).toBe("Luna! Ravenclaw are lucky to have you.");
     expect(prompts[0]).toContain("Luna (Ravenclaw)");
     expect(prompts[0]).toContain("Welcome, Harry!");
