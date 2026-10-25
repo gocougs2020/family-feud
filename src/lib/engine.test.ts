@@ -11,6 +11,7 @@ import {
   startGame,
   surveyReady,
   tick,
+  TIMERS,
   type EngineCtx,
 } from "./engine";
 import { localMatch } from "./match";
@@ -50,8 +51,8 @@ function lobby(ctx: EngineCtx): GameState {
 }
 
 function answer(s: GameState, playerId: string, text: string, ctx: EngineCtx) {
+  s = s.turn!.kind === "buzz" ? buzz(s, playerId, s.turn!.id, text, ctx) : markJudging(s, playerId, s.turn!.id, text, ctx);
   const turnId = s.turn!.id;
-  s = markJudging(s, playerId, turnId, text, ctx);
   const index = localMatch(text, secret.rounds[s.round!.index].answers);
   return resolveGuess(s, secret, { turnId, playerId, text, answerIndex: index }, ctx);
 }
@@ -75,8 +76,10 @@ describe("engine", () => {
     expect(s.phase).toBe("faceoff");
     expect(s.turn!.playerIds).toEqual(["harry", "draco"]);
 
-    // Draco buzzes and finds a lower answer; Harry then finds the top answer.
-    s = buzz(s, "draco", s.turn!.id, ctx);
+    // A face-off buzz has to carry an answer.
+    expect(() => buzz(s, "draco", s.turn!.id, "  ", ctx)).toThrow("Type an answer first");
+
+    // Draco buzzes in with a lower answer; Harry then finds the top answer.
     s = answer(s, "draco", "robes", ctx);
     expect(s.round!.board[1].revealed).toBe(true);
     expect(s.turn!.playerIds).toEqual(["harry"]);
@@ -110,6 +113,20 @@ describe("engine", () => {
     s = tick(s, secret, ctx)!;
     expect(s.phase).toBe("round_intro");
     expect(s.round!.multiplier).toBe(multiplierFor(1, 2));
+  });
+
+  it("locks the buzzer's answer in for judging and gives the other player a shorter reply", () => {
+    const ctx = makeCtx();
+    let s = startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx);
+    s = tick(s, secret, ctx, true)!;
+    const buzzTurn = s.turn!.id;
+    s = buzz(s, "harry", buzzTurn, " robes ", ctx);
+    expect(s.event?.kind).toBe("buzz");
+    expect(s.turn).toMatchObject({ kind: "faceoff_answer", playerIds: ["harry"], judging: { playerId: "harry", text: "robes" } });
+    expect(() => buzz(s, "draco", buzzTurn, "wand", ctx)).toThrow("Too late!");
+
+    s = resolveGuess(s, secret, { turnId: s.turn!.id, playerId: "harry", text: "robes", answerIndex: 1 }, ctx);
+    expect(s.turn).toMatchObject({ kind: "faceoff_answer", playerIds: ["draco"], deadline: ctx.now + TIMERS.faceoffReply });
   });
 
   it("ends the game after the last round", () => {

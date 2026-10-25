@@ -2,8 +2,9 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { themeVars } from "@/components/theme-vars";
+import { captionAt, splitCaptions } from "@/lib/captions";
 import { seatKey, sendAction } from "@/lib/client/api";
 import { FeudAudio, type Sfx } from "@/lib/client/audio";
 import { HostVoice } from "@/lib/client/speech";
@@ -45,15 +46,24 @@ export function HostScreen({ code }: { code: string }) {
   const audio = useRef<FeudAudio | null>(null);
   const voice = useRef<HostVoice | null>(null);
   const aiOn = !!live.meta?.ai;
+  // The line the host is speaking (which can trail the newest line for a beat) and how far through it.
+  const [caption, setCaption] = useState<Caption | null>(null);
 
   const speakLine = useCallback(
-    (line: { id: string; text: string }) => {
+    (line: { id: string; text: string }, silent = false) => {
       voice.current ??= new HostVoice(code);
       void voice.current.say(line, theme.voice, {
         ai: aiOn,
         token: hostToken,
+        silent,
         onStart: () => audio.current?.duck(true),
         onEnd: () => audio.current?.duck(false),
+        onProgress: (spoken, fraction) =>
+          setCaption((prev) => {
+            const captions = prev?.id === spoken.id ? prev.captions : splitCaptions(spoken.text);
+            const index = captionAt(captions, fraction);
+            return prev?.id === spoken.id && prev.index === index ? prev : { id: spoken.id, captions, index };
+          }),
       });
     },
     [code, hostToken, theme.voice, aiOn],
@@ -111,6 +121,11 @@ export function HostScreen({ code }: { code: string }) {
     };
     if (ev.kind === "hit" || ev.kind === "steal_hit") audio.current.play(ev.answerIndex === 0 ? "top" : "reveal");
     else if (sfx[ev.kind]) audio.current.play(sfx[ev.kind]!);
+    // A face-off buzz arrives with its answer already locked in.
+    if (ev.kind === "buzz" && ev.text) {
+      const t = setTimeout(() => audio.current?.play("drumroll"), 700);
+      return () => clearTimeout(t);
+    }
     if (["miss", "dupe", "timeout", "steal_miss"].includes(ev.kind)) {
       shaker.current?.animate(
         [
@@ -136,18 +151,19 @@ export function HostScreen({ code }: { code: string }) {
     return () => timers.forEach(clearTimeout);
   }, [roundEndKey, autoReveals]);
 
-  // The host speaks every new line.
+  // The host speaks every new line (or, with the voice off, captions it on a clock).
   const lastLine = useRef<string | null>(null);
   useEffect(() => {
     const line = state?.hostLine;
     if (!line || line.id === lastLine.current) return;
     lastLine.current = line.id;
-    if (!onAir || !prefs.voice) return;
-    speakLine(line);
+    speakLine(line, !onAir || !prefs.voice);
   }, [state?.hostLine, onAir, prefs.voice, speakLine]);
 
   useEffect(() => {
-    if (!prefs.voice) voice.current?.stop();
+    if (prefs.voice) return;
+    voice.current?.stop();
+    audio.current?.duck(false);
   }, [prefs.voice]);
 
   useEffect(() => {
@@ -200,7 +216,7 @@ export function HostScreen({ code }: { code: string }) {
       <div className="tv-vignette absolute inset-0" />
       <div className="tv-scanlines absolute inset-0" />
       <TopBar state={state} theme={theme} connected={live.connected} />
-      <Chyron theme={theme} line={state.hostLine} />
+      <Chyron theme={theme} caption={caption} line={state.hostLine} />
       <HostMenu prefs={prefs} onChange={updatePrefs} isHost={!!hostToken} onAction={act} state={state} />
       <AnimatePresence>{!onAir && <OnAirCurtain theme={theme} onStart={goOnAir} />}</AnimatePresence>
     </div>
@@ -235,27 +251,23 @@ function TopBar({ state, theme, connected }: { state: GameState; theme: PackThem
   );
 }
 
-/** TV-style lower third with the host's latest line, typed out. */
-function Chyron({ theme, line }: { theme: PackTheme; line: GameState["hostLine"] }) {
-  const [typed, setTyped] = useState({ id: "", n: 0 });
-  const lineId = line?.id;
-  const length = line?.text.length ?? 0;
-  useEffect(() => {
-    if (!lineId) return;
-    let n = 0;
-    const id = setInterval(() => {
-      n += 2;
-      setTyped({ id: lineId, n });
-      if (n >= length) clearInterval(id);
-    }, 28);
-    return () => clearInterval(id);
-  }, [lineId, length]);
-  if (!line) return null;
-  const shown = line.text.slice(0, typed.id === line.id ? typed.n : 0);
+interface Caption {
+  id: string;
+  captions: string[];
+  index: number;
+}
+
+/** TV-style lower third: the host's words as closed captions, a sentence at a time, in step with the voice. */
+function Chyron({ theme, caption, line }: { theme: PackTheme; caption: Caption | null; line: GameState["hostLine"] }) {
+  const fallback = useMemo(() => (line ? splitCaptions(line.text) : []), [line]);
+  const id = caption?.id ?? line?.id;
+  const text = caption ? caption.captions[caption.index] : fallback[0];
+  if (!id || !text) return null;
+  const key = `${id}-${caption?.index ?? 0}`;
   return (
     <div className="pointer-events-none absolute inset-x-[4vw] bottom-[2.5vh] z-20">
       <motion.div
-        key={line.id}
+        key={id}
         initial={{ x: -30, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         className="flex items-stretch overflow-hidden rounded-xl shadow-2xl"
@@ -264,7 +276,19 @@ function Chyron({ theme, line }: { theme: PackTheme; line: GameState["hostLine"]
           <span className="text-[1.4em]">{theme.emoji}</span>
           {theme.hostName}
         </div>
-        <div className="flex-1 bg-panel px-5 py-3 text-[clamp(1rem,1.7vw,1.9rem)] backdrop-blur">{shown}</div>
+        <div className="flex min-h-[2.2em] flex-1 items-center bg-panel px-5 py-3 text-[clamp(1.1rem,1.9vw,2.1rem)] leading-snug backdrop-blur">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={key}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.14 }}
+            >
+              {text}
+            </motion.span>
+          </AnimatePresence>
+        </div>
       </motion.div>
     </div>
   );

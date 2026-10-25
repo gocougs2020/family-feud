@@ -25,7 +25,10 @@ export interface EngineCtx {
 
 export const TIMERS = {
   roundIntro: 9_000,
-  buzz: 20_000,
+  /** face-off: type an answer, then buzz to lock it in */
+  buzz: 25_000,
+  /** face-off: the second player's reply, once the buzzer's answer is in */
+  faceoffReply: 15_000,
   playPass: 15_000,
   steal: 40_000,
   roundEnd: 12_000,
@@ -285,14 +288,21 @@ function startFaceoff(state: GameState, ctx: EngineCtx): GameState {
   return say(next, ctx, "faceoff");
 }
 
-export function buzz(state: GameState, playerId: string, turnId: string, ctx: EngineCtx): GameState {
+/**
+ * Face-off buzz: the player types their answer first and buzzing submits it,
+ * so the race is to think of an answer, not just to hit the button.
+ */
+export function buzz(state: GameState, playerId: string, turnId: string, text: string, ctx: EngineCtx): GameState {
   const turn = state.turn;
   if (state.phase !== "faceoff" || !turn || turn.kind !== "buzz") throw new GameError("Too late!", 409);
   if (turn.id !== turnId) throw new GameError("Too late!", 409);
   if (!turn.playerIds.includes(playerId)) throw new GameError("You're not in this face-off", 403);
+  const clean = text.trim().slice(0, LIMITS.answerLength);
+  if (!clean) throw new GameError("Type an answer first");
   const team = state.players.find((p) => p.id === playerId)?.team ?? 0;
-  let next: GameState = { ...state, turn: makeTurn(ctx, "faceoff_answer", [playerId], team, state.settings.answerSeconds * 1000) };
-  next = emit(next, ctx, { kind: "buzz", playerId, team });
+  const answerTurn: Turn = { ...makeTurn(ctx, "faceoff_answer", [playerId], team, TIMERS.judging), judging: { playerId, text: clean } };
+  let next: GameState = { ...state, turn: answerTurn };
+  next = emit(next, ctx, { kind: "buzz", playerId, team, text: clean });
   return say(next, ctx, "buzz", { name: playerName(state, playerId) });
 }
 
@@ -393,7 +403,7 @@ export function resolveGuess(state: GameState, secret: GameSecret, input: GuessI
       if (hitIndex === 0) return toPlayOrPass(next, team, input.playerId, ctx);
       const opponent = round.faceoff.playerIds[other(team)];
       if (answered.length === 1 && opponent) {
-        return { ...next, turn: makeTurn(ctx, "faceoff_answer", [opponent], other(team), state.settings.answerSeconds * 1000) };
+        return { ...next, turn: makeTurn(ctx, "faceoff_answer", [opponent], other(team), TIMERS.faceoffReply) };
       }
       // Both have answered (or there's no opponent): the higher answer wins.
       const [first, second] = answered;
@@ -564,7 +574,7 @@ export function tick(state: GameState, secret: GameSecret | null, ctx: EngineCtx
         const team = state.players.find((p) => p.id === chosen)?.team ?? 0;
         const next: GameState = {
           ...state,
-          turn: makeTurn(ctx, "faceoff_answer", [chosen], team, state.settings.answerSeconds * 1000),
+          turn: makeTurn(ctx, "faceoff_answer", [chosen], team, TIMERS.faceoffReply),
         };
         return withHostLine(next, ctx, `Nobody buzzed! ${playerName(state, chosen)}, you're up.`);
       }

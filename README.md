@@ -12,8 +12,8 @@ Built on Next.js, the Vercel AI SDK and AI Gateway, and Supabase. It ships with 
 
 ## What's in the box
 
-- **TV screen** (`/host/ABCD`): a broadcast-style stage with a React Three Fiber backdrop (floating candles, an enchanted starry ceiling and a castle silhouette for the wizard pack; sweeping studio lights and a marquee for the classic pack). On top of that sit a flipping 3D answer board, strike X's, a score podium, a "Survey says…" beat, slow camera drift, and a lower-third chyron for the host. Without WebGL it falls back to an animated CSS stage.
-- **Phone controller** (`/play/ABCD`): join with a name, switch teams, a big BUZZ button for face-offs, an answer box when it's your turn, play/pass, team steals, and haptic buzzes on your turn.
+- **TV screen** (`/host/ABCD`): a broadcast-style stage with a React Three Fiber backdrop (floating candles, an enchanted starry ceiling and a castle silhouette for the wizard pack; sweeping studio lights and a marquee for the classic pack). On top of that sit a flipping 3D answer board, strike X's, a score podium, a "Survey says…" beat, slow camera drift, and a lower-third chyron that captions the host a sentence at a time, in step with the voice. Without WebGL it falls back to an animated CSS stage.
+- **Phone controller** (`/play/ABCD`): join with a name, switch teams, type-then-buzz face-offs (you type your answer and the big BUZZ button locks it in, so the race is to think of an answer), an answer box when it's your turn, play/pass, team steals, and haptic buzzes on your turn.
 - **AI host** (via the Vercel AI Gateway):
   - writes a fresh survey (questions, ranked answers, points and aliases) for every game, while players are still joining in the lobby
   - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley", "the snake" is "Basilisk"), with an in-character quip

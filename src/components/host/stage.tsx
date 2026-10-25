@@ -215,9 +215,12 @@ function TurnBanner({ state, serverNow }: StageProps) {
   let label = "";
   let total: number = state.settings.answerSeconds * 1000;
   if (state.phase === "faceoff" && turn?.kind === "buzz") {
-    label = `FACE-OFF: ${names(turn.playerIds)} — buzz in!`;
+    label = `FACE-OFF: ${names(turn.playerIds)} — type it & buzz in!`;
     total = TIMERS.buzz;
-  } else if (turn?.kind === "faceoff_answer") label = `${names(turn.playerIds)}, your answer?`;
+  } else if (turn?.kind === "faceoff_answer") {
+    label = `${names(turn.playerIds)}, your answer?`;
+    total = TIMERS.faceoffReply;
+  }
   else if (turn?.kind === "play_pass") {
     label = `${names(turn.playerIds)}: play or pass?`;
     total = TIMERS.playPass;

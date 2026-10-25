@@ -11,7 +11,6 @@ import {
   createGameState,
   endGame,
   GameError,
-  LIMITS,
   markJudging,
   removePlayer,
   resetForReplay,
@@ -146,7 +145,7 @@ export type Action =
   | { type: "start" }
   | { type: "set_team"; team: TeamIndex }
   | { type: "rename_team"; team: TeamIndex; name: string }
-  | { type: "buzz"; turnId: string }
+  | { type: "buzz"; turnId: string; text: string }
   | { type: "answer"; turnId: string; text: string }
   | { type: "play_pass"; turnId: string; choice: "play" | "pass" }
   | { type: "tick" }
@@ -200,7 +199,8 @@ export async function performAction(code: string, seat: Seat | null, action: Act
       break;
     case "buzz": {
       const playerId = requirePlayer(seat, game.state);
-      result = await run((s, ctx) => buzz(s, playerId, action.turnId, ctx));
+      const text = String(action.text ?? "");
+      result = await judgeAnswer(id, playerId, (s, ctx) => buzz(s, playerId, action.turnId, text, ctx), 2600);
       break;
     }
     case "play_pass": {
@@ -210,7 +210,8 @@ export async function performAction(code: string, seat: Seat | null, action: Act
     }
     case "answer": {
       const playerId = requirePlayer(seat, game.state);
-      result = await submitAnswer(id, playerId, action.turnId, String(action.text ?? ""));
+      const text = String(action.text ?? "");
+      result = await judgeAnswer(id, playerId, (s, ctx) => markJudging(s, playerId, action.turnId, text, ctx));
       break;
     }
     case "tick":
@@ -250,15 +251,25 @@ export async function performAction(code: string, seat: Seat | null, action: Act
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Lock the guess, judge it (locally, then with AI), and apply the result. */
-async function submitAnswer(id: string, playerId: string, turnId: string, text: string) {
+/**
+ * Lock the guess (a plain answer, or a face-off buzz that carries one), judge
+ * it (locally, then with AI), and apply the result. A buzz gets a longer
+ * beat so the buzzer sound and the host's "buzzed in" line can land first.
+ */
+async function judgeAnswer(
+  id: string,
+  playerId: string,
+  lock: (state: GameState, ctx: EngineCtx) => GameState,
+  beat = 1800,
+) {
   const store = getStore();
-  const clean = text.trim().slice(0, LIMITS.answerLength);
-  const marked = await store.mutate(id, (s) => markJudging(s, playerId, turnId, clean, ctxFor(s)));
+  const marked = await store.mutate(id, (s) => lock(s, ctxFor(s)));
   const startedAt = Date.now();
   const secret = await store.getSecret(id);
   const state = marked.state;
-  if (!secret || !state.round) throw new GameError("The survey isn't ready yet", 409);
+  const turnId = state.turn?.id;
+  const clean = state.turn?.judging?.text ?? "";
+  if (!secret || !state.round || !turnId) throw new GameError("The survey isn't ready yet", 409);
   const survey = secret.rounds[state.round.index];
 
   let index = localMatch(clean, survey.answers);
@@ -274,7 +285,7 @@ async function submitAnswer(id: string, playerId: string, turnId: string, text: 
   }
 
   // Give the TV a beat for "Survey says…".
-  await sleep(Math.max(0, 1800 - (Date.now() - startedAt)));
+  await sleep(Math.max(0, beat - (Date.now() - startedAt)));
   let finished = false;
   const result = await store.mutate(id, (s) => {
     if (s.turn?.id !== turnId) return null; // timed out or skipped meanwhile
