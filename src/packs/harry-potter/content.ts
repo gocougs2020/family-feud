@@ -207,13 +207,16 @@ export const harryPotterContent: PackContent = {
     gameIntro: [
       "Good evening, witches and wizards! Yes, it's really me, Gilderoy Lockhart, and welcome to The Wizarding Feud! Tonight, {team} take on {other}!",
     ],
+    rules: [
+      "Now, the rules, which I wrote myself. Each round opens with a face-off: when the question appears, type your answer on your phone and buzz in. The winner's house may play the board or pass it. Three strikes, and the other house gets one chance to steal!",
+    ],
     roundIntro: [
       "Round {round}! We surveyed 100 witches and wizards, and I'll admit I'd have answered all of them correctly.",
       "Round {round}, everyone. Smiles on, wands ready!",
     ],
     faceoff: [
-      "Face-off time, {names}! Type your answer and buzz it in, and do try to be as quick as me.",
-      "Step up, step up! Fastest answer buzzed in goes first. No pressure, the whole Great Hall is watching.",
+      "Face-off time, {names}! Wands at the ready, the question is coming, and do try to be as quick as me.",
+      "Step up, step up, {names}! Fastest answer buzzed in goes first. Here comes the question!",
     ],
     noBuzz: ["Nobody buzzed? Dear me. {name}, you're up, and do make it a good one."],
     topHit: [

@@ -15,7 +15,10 @@ export interface LiveGame {
   state: GameState | null;
   meta: Pick<GameSnapshot, "id" | "store" | "ai"> | null;
   error: string | null;
+  /** the room doesn't exist, or has been shut down */
   notFound: boolean;
+  /** the room existed but has been shut down */
+  ended: boolean;
   connected: boolean;
   /** Apply a newer state (e.g. from an action response) without waiting for realtime. */
   apply: (version: number, state: GameState, serverNow?: number) => void;
@@ -23,17 +26,23 @@ export interface LiveGame {
   serverNow: () => number;
 }
 
+/** 404: no such room; 410: it has been shut down. */
+const gone = (err: unknown) => err instanceof ApiError && (err.status === 404 || err.status === 410);
+const isShutDown = (err: unknown) => err instanceof ApiError && err.status === 410;
+
 /**
  * Live game state for a room. Uses Supabase Realtime when the server has it
  * configured, otherwise Server-Sent Events from the local dev server. Either
  * way it also re-fetches on focus and every so often, so a dropped socket
- * never leaves a phone stuck.
+ * never leaves a phone stuck. Once the room closes it stops listening, so a
+ * forgotten tab doesn't keep hitting the server.
  */
 export function useGame(code: string): LiveGame {
   const [state, setState] = useState<GameState | null>(null);
   const [meta, setMeta] = useState<LiveGame["meta"]>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [shutDown, setShutDown] = useState(false);
   const [connected, setConnected] = useState(false);
   const version = useRef(0);
   const offset = useRef(0);
@@ -52,13 +61,17 @@ export function useGame(code: string): LiveGame {
       setError(null);
       return snap;
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) setNotFound(true);
+      if (gone(err)) setNotFound(true);
+      if (isShutDown(err)) setShutDown(true);
       setError(err instanceof Error ? err.message : "Connection problem");
       return null;
     }
   }, [code, apply]);
 
+  const closed = notFound || state?.phase === "closed";
+
   useEffect(() => {
+    if (closed) return;
     let disposed = false;
     let teardown = () => {};
 
@@ -95,7 +108,8 @@ export function useGame(code: string): LiveGame {
         teardown = () => source.close();
       }
     }, (err) => {
-      if (err instanceof ApiError && err.status === 404) setNotFound(true);
+      if (gone(err)) setNotFound(true);
+      if (isShutDown(err)) setShutDown(true);
       setError(err instanceof Error ? err.message : "Connection problem");
     });
 
@@ -109,11 +123,12 @@ export function useGame(code: string): LiveGame {
       clearInterval(poll);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [code, apply, refresh]);
+  }, [code, apply, refresh, closed]);
 
   const serverNow = useCallback(() => Date.now() + offset.current, []);
 
-  return { state, meta, error, notFound, connected, apply, serverNow };
+  const ended = shutDown || state?.phase === "closed";
+  return { state, meta, error, notFound, ended, connected: connected && !closed, apply, serverNow };
 }
 
 /** Re-render every `ms` (for countdowns). */

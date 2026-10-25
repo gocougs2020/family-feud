@@ -5,8 +5,11 @@ const lines: HostLines = {
   join: ["Welcome, {names}!", "Give it up for {names}!"],
   preparing: ["Hang tight — we're tallying the survey results!"],
   gameIntro: ["Welcome to Family Feud! Tonight it's {team} against {other}!"],
+  rules: [
+    "Here's how it works. Each round starts with a face-off: when the question pops up, type your answer on your phone and buzz in. Win it, and your team can play the board or pass it. Find every answer before three strikes, or the other team gets one shot to steal!",
+  ],
   roundIntro: ["Round {round}! We surveyed 100 people, top answers are on the board..."],
-  faceoff: ["Let's play the face-off! {names}, type your answer and hit that buzzer."],
+  faceoff: ["Let's play the face-off! {names}, step up to the buzzers. Here comes the question!"],
   noBuzz: ["Nobody buzzed! {name}, you're up."],
   topHit: ["Number one answer! Fantastic!"],
   hit: ["Good answer! Good answer!", "Survey says... there it is! {answer}!", "That's on the board!"],

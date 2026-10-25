@@ -33,7 +33,8 @@ export function supabaseConfigured() {
 
 type Row = { id: string; code: string; version: number; state: GameState };
 
-const STALE = "24 hours";
+/** Rooms last at most an hour (see the `delete_stale_games` migration, also run every few minutes by pg_cron). */
+const STALE = "1 hour";
 
 export const supabaseStore: GameStore = {
   kind: "supabase",

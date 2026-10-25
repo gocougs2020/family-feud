@@ -53,6 +53,7 @@ export type HostLineKey =
   | "join"
   | "preparing"
   | "gameIntro"
+  | "rules"
   | "roundIntro"
   | "faceoff"
   | "noBuzz"
@@ -72,7 +73,8 @@ export type HostLineKey =
 
 /**
  * Canned host lines, used when AI is off or slow. With AI on, the host writes
- * every line fresh. Lines may use {name}, {names}, {team}, {other}, {answer},
+ * every line fresh, except `rules`, which is always read as written so the
+ * rules come out right. Lines may use {name}, {names}, {team}, {other}, {answer},
  * {points}, {round}, {multiplier}.
  */
 export type HostLines = Record<HostLineKey, string[]>;

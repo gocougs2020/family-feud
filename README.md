@@ -17,11 +17,13 @@ Built on Next.js, the Vercel AI SDK and AI Gateway, and Supabase. It ships with 
 - **AI host** (via the Vercel AI Gateway):
   - writes a fresh survey (questions, ranked answers, points and aliases) for every game, while players are still joining in the lobby
   - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley", "the snake" is "Basilisk") with a fast decision model
-  - writes every host line fresh, in character, for that moment of that game: greeting players by name as they join, the opening, reading each question aloud, reacting to every answer (and saying what's at stake next), and a spoken sign-off recap
+  - writes every host line fresh, in character, for that moment of that game: greeting players by name as they join, the opening, calling up each face-off and reading the question aloud as it's revealed, reacting to every answer (and saying what's at stake next), and a spoken sign-off recap
   - voices each line as soon as it's written, and the TV lets a line finish (or fades it out) rather than cutting the host off mid-word
   - …and falls back to hand-written surveys and canned lines whenever AI is off or slow (a host line gets about 3 seconds), so the game never stalls.
 - **Host voice and music**: with AI on, the host's lines are voiced by **`fish-audio/drama-3`** through the AI Gateway, with per-pack delivery notes (Gilderoy Lockhart hosts the wizard pack; a punchy studio host does Classic). Pick a specific Fish Audio voice per pack with `AI_TTS_VOICE_<PACK_ID>`, e.g. `AI_TTS_VOICE_HARRY_POTTER`. Without AI, the browser's speech synthesis takes over. The original, procedurally composed music (a candle-lit waltz for the wizard pack, a studio groove for classic) is re-written from a random seed each game. Sound effects (ding, buzzer, drum roll, applause) are synthesized too. There are no audio files.
 - **Real rules**: face-off (top answer wins outright, otherwise the higher answer wins), play or pass, rotating turns so everyone answers, three strikes, team steal, and double/triple points in the late rounds.
+- **Paced by the host**: before round 1 the host explains how to play. Each round's question stays hidden (on the TV, the phones and in the public game state) until the face-off opens, so nobody gets a head start. Phones can't buzz, answer, or play/pass while the host is talking: a turn opens the moment the TV finishes the host's line, and its timer starts then.
+- **No abandoned rooms**: the TV has an always-on **End session** button (with a confirmation) that shuts the room for every screen. Closing the TV window shuts it too, after a 20-second grace period so a reload doesn't. Every room closes after an hour, and closed screens stop polling.
 
 ## Quick start (no accounts needed)
 
@@ -101,6 +103,8 @@ AI cost is small. Each game uses one survey-writing call on `AI_MODEL` (`openai/
 - **Hidden answers never reach the browser.** The survey lives in `game_secrets`, which has RLS on and no policies, so only the server's secret key can read it. A tile's answer is copied into public state only when it's revealed.
 - **Race-free buzzing.** Every write is `read → apply pure rule → update … where version = n`, retried on conflict, so two buzzes in the same millisecond resolve cleanly.
 - **No server timers.** Each phase stores a `deadline`. The TV asks the server to `tick` when it passes, and phones do the same a little later as a backup. The server checks the deadline itself, so these calls are idempotent.
+- **Turns wait for the host.** A turn that starts with a new host line is held (`turn.opensAt`) until that line is spoken: the TV sends `line_done` when its voice finishes, and a speech-length estimate opens it anyway if the TV doesn't. The same signal ends a round's intro a beat after the host stops talking.
+- **Rooms clean themselves up.** A room is shut (phase `closed`) when the host ends it, when the TV window closes and doesn't come back within 20 seconds, or an hour after it was created; screens then stop listening. Rows are deleted by `delete_stale_games`, run every five minutes by `pg_cron` where available and whenever a game is created.
 - **No accounts.** Joining returns an HMAC-signed seat token, kept in `localStorage` and sent as a Bearer header.
 
 ### Project layout

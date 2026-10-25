@@ -8,9 +8,9 @@ import { captionAt, splitCaptions } from "@/lib/captions";
 import { seatKey, sendAction } from "@/lib/client/api";
 import { FeudAudio, type Sfx } from "@/lib/client/audio";
 import { HostVoice } from "@/lib/client/speech";
-import { useGame } from "@/lib/client/use-game";
+import { useGame, useNow } from "@/lib/client/use-game";
 import { useStored } from "@/lib/client/use-stored";
-import { activeDeadline } from "@/lib/engine";
+import { activeDeadline, TIMERS } from "@/lib/engine";
 import type { GameState } from "@/lib/types";
 import { getPackTheme } from "@/packs";
 import type { PackTheme } from "@/packs/types";
@@ -49,6 +49,25 @@ export function HostScreen({ code }: { code: string }) {
   // The line the host is speaking (which can trail the newest line for a beat) and how far through it.
   const [caption, setCaption] = useState<Caption | null>(null);
 
+  const act = useCallback(
+    async (type: string, extra: Record<string, unknown> = {}) => {
+      try {
+        const res = await sendAction(code, { type, ...extra } as never, hostToken);
+        apply(res.version, res.state, res.now);
+      } catch (err) {
+        if (type !== "tick" && type !== "line_done") console.warn(err);
+      }
+    },
+    [code, hostToken, apply],
+  );
+
+  // The line the game is waiting on (a held turn, or a round's intro): once the host has said it, the game moves on.
+  const waitingOn = useRef<string | undefined>(undefined);
+  const waitingFor = state?.turn?.heldFor ?? (state?.phase === "round_intro" ? state.hostLine?.id : undefined);
+  useEffect(() => {
+    waitingOn.current = waitingFor;
+  }, [waitingFor]);
+
   const speakLine = useCallback(
     (line: { id: string; text: string }, silent = false) => {
       voice.current ??= new HostVoice(code);
@@ -58,6 +77,9 @@ export function HostScreen({ code }: { code: string }) {
         silent,
         onStart: () => audio.current?.duck(true),
         onEnd: () => audio.current?.duck(false),
+        onDone: (done) => {
+          if (hostToken && done.id === waitingOn.current) void act("line_done", { lineId: done.id });
+        },
         onProgress: (spoken, fraction) =>
           setCaption((prev) => {
             const captions = prev?.id === spoken.id ? prev.captions : splitCaptions(spoken.text);
@@ -66,28 +88,36 @@ export function HostScreen({ code }: { code: string }) {
           }),
       });
     },
-    [code, hostToken, theme.voice, aiOn],
+    [code, hostToken, theme.voice, aiOn, act],
   );
 
   const updatePrefs = (patch: Partial<Prefs>) => setRawPrefs(JSON.stringify({ ...prefs, ...patch }));
 
-  const act = useCallback(
-    async (type: string, extra: Record<string, unknown> = {}) => {
-      try {
-        const res = await sendAction(code, { type, ...extra } as never, hostToken);
-        apply(res.version, res.state, res.now);
-      } catch (err) {
-        if (type !== "tick") console.warn(err);
-      }
-    },
-    [code, hostToken, apply],
-  );
+  // Closing the TV window shuts the room, so nobody's left in an abandoned
+  // game. A reload comes straight back and keeps it open.
+  useEffect(() => {
+    if (!hostToken) return;
+    const leave = () => {
+      void fetch(`/api/games/${code}/action`, {
+        method: "POST",
+        keepalive: true,
+        headers: { "content-type": "application/json", authorization: `Bearer ${hostToken}` },
+        body: JSON.stringify({ type: "host_leaving" }),
+      }).catch(() => {});
+    };
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [code, hostToken]);
+  const closesAt = state?.closesAt;
+  useEffect(() => {
+    if (closesAt && hostToken) void act("host_back");
+  }, [closesAt, hostToken, act]);
 
   // The TV is the game clock: when a timer runs out, ask the server to advance.
   const deadline = state ? activeDeadline(state) : null;
   const phase = state?.phase;
   useEffect(() => {
-    if (!deadline || phase === "game_over" || phase === "lobby") return;
+    if (!deadline || phase === "game_over" || phase === "lobby" || phase === "closed") return;
     const wait = Math.max(0, deadline - serverNow()) + 250;
     const t = setTimeout(() => act("tick"), wait);
     // If the tick was a no-op (clock skew), try again shortly.
@@ -110,6 +140,7 @@ export function HostScreen({ code }: { code: string }) {
       join: "join",
       start: "sting",
       round_start: "sting",
+      question: "whoosh",
       buzz: "buzz",
       judging: "drumroll",
       miss: "strike",
@@ -188,10 +219,14 @@ export function HostScreen({ code }: { code: string }) {
     document.documentElement.requestFullscreen?.().catch(() => {});
   };
 
-  // Start the score on air (and re-compose it if the pack changes).
+  // Start the score on air (and re-compose it if the pack changes); stop everything once the room closes.
+  const ended = live.notFound || phase === "closed";
   useEffect(() => {
-    if (onAir) audio.current?.startMusic(theme.music, Date.now());
-  }, [theme.music, onAir]);
+    if (ended) {
+      audio.current?.stopMusic();
+      voice.current?.stop();
+    } else if (onAir) audio.current?.startMusic(theme.music, Date.now());
+  }, [theme.music, onAir, ended]);
 
   useEffect(
     () => () => {
@@ -201,10 +236,11 @@ export function HostScreen({ code }: { code: string }) {
     [],
   );
 
-  if (live.notFound) {
+  if (live.notFound || state?.phase === "closed") {
+    const message = state?.phase === "closed" ? closedMessage(state.closed) : live.ended ? closedMessage(undefined) : `There's no game with code ${code}.`;
     return (
       <Centered>
-        <p className="text-2xl">There&apos;s no game with code {code}.</p>
+        <p className="text-2xl">{message}</p>
         <Link href="/" className="rounded-xl bg-accent px-5 py-2 font-semibold text-black">
           Create a new game
         </Link>
@@ -224,19 +260,39 @@ export function HostScreen({ code }: { code: string }) {
       <StrikeOverlay event={state.event} phase={state.phase} />
       <div className="tv-vignette absolute inset-0" />
       <div className="tv-scanlines absolute inset-0" />
-      <TopBar state={state} theme={theme} connected={live.connected} />
+      <TopBar state={state} theme={theme} connected={live.connected} serverNow={serverNow} />
       <Chyron theme={theme} caption={caption} line={state.hostLine?.pending ? null : state.hostLine} />
       <HostMenu prefs={prefs} onChange={updatePrefs} isHost={!!hostToken} onAction={act} state={state} />
+      {hostToken && <EndSession onConfirm={() => act("close")} />}
       <AnimatePresence>{!onAir && <OnAirCurtain theme={theme} onStart={goOnAir} />}</AnimatePresence>
     </div>
   );
+}
+
+function closedMessage(reason: GameState["closed"]) {
+  if (reason === "expired") return "This game room hit its one-hour limit and has closed.";
+  if (reason === "host_left") return "The TV window was closed, so this game room has closed.";
+  return "This game room has closed. Thanks for playing!";
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-bg p-8 text-center">{children}</div>;
 }
 
-function TopBar({ state, theme, connected }: { state: GameState; theme: PackTheme; connected: boolean }) {
+/** A heads-up in the last few minutes before the room hits its time limit. */
+function ClosingSoon({ createdAt, serverNow }: { createdAt: number; serverNow: () => number }) {
+  useNow(10_000);
+  const left = createdAt + TIMERS.session - serverNow();
+  if (left > 5 * 60_000) return null;
+  const minutes = Math.max(1, Math.ceil(left / 60_000));
+  return (
+    <span className="rounded-md bg-strike/80 px-2 py-0.5 text-sm text-white">
+      Room closes in {minutes} min
+    </span>
+  );
+}
+
+function TopBar({ state, theme, connected, serverNow }: { state: GameState; theme: PackTheme; connected: boolean; serverNow: () => number }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-[2vw]">
       <div className="flex items-center gap-3">
@@ -249,6 +305,7 @@ function TopBar({ state, theme, connected }: { state: GameState; theme: PackThem
             Round {state.roundIndex + 1}/{state.settings.rounds}
           </span>
         )}
+        <ClosingSoon createdAt={state.createdAt} serverNow={serverNow} />
       </div>
       {state.phase !== "lobby" && (
         <div className="rounded-xl bg-panel px-4 py-2 text-right backdrop-blur">
@@ -347,8 +404,8 @@ function HostMenu({
               <button className="rounded-lg px-3 py-1.5 text-left hover:bg-white/10" onClick={() => onAction("skip")}>
                 Skip ahead ⏭
               </button>
-              <button className="rounded-lg px-3 py-1.5 text-left text-strike hover:bg-white/10" onClick={() => confirm("End the game now?") && onAction("end")}>
-                End game
+              <button className="rounded-lg px-3 py-1.5 text-left hover:bg-white/10" onClick={() => confirm("Finish this game and go to the final scores?") && onAction("end")}>
+                Finish game (final scores)
               </button>
             </>
           )}
@@ -358,6 +415,68 @@ function HostMenu({
         ⚙︎
       </button>
     </div>
+  );
+}
+
+/** Always on hand: shut the room down for everyone, after a confirmation. */
+function EndSession({ onConfirm }: { onConfirm: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="absolute bottom-[14vh] right-[calc(1.5vw+3rem)] z-40 h-10 rounded-full bg-panel px-4 text-sm font-semibold opacity-30 backdrop-blur transition hover:opacity-100"
+      >
+        End session
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[60] grid place-items-center bg-black/70 p-6 backdrop-blur-sm"
+            onClick={() => !busy && setOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="end-session-title"
+              onClick={(e) => e.stopPropagation()}
+              className="flex max-w-md flex-col gap-4 rounded-2xl bg-bg p-6 shadow-2xl"
+              style={{ boxShadow: "0 0 0 2px var(--c-strike)" }}
+            >
+              <h2 id="end-session-title" className="font-display text-2xl">
+                End this game room?
+              </h2>
+              <p className="opacity-80">
+                The game stops for everyone, every phone is disconnected, and the room code stops working. This can&apos;t be undone.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button autoFocus disabled={busy} onClick={() => setOpen(false)} className="rounded-xl bg-white/10 px-4 py-2 font-semibold hover:bg-white/20">
+                  Keep playing
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    await onConfirm();
+                    setBusy(false);
+                    setOpen(false);
+                  }}
+                  className="rounded-xl bg-strike px-4 py-2 font-semibold text-white disabled:opacity-60"
+                >
+                  {busy ? "Ending…" : "End session"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 

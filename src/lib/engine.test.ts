@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { harryPotterContent } from "@/packs/harry-potter/content";
 import {
+  activeDeadline,
   addPlayer,
   buzz,
   choosePlayPass,
+  closeReason,
+  closeRoom,
   createGameState,
+  holdNewTurn,
+  hostBack,
+  hostLeaving,
+  lineDone,
   markJudging,
   multiplierFor,
   resolveGuess,
@@ -50,6 +57,12 @@ function lobby(ctx: EngineCtx): GameState {
   return s;
 }
 
+/** Start the face-off and let the host finish calling it, which opens the buzzers. */
+function faceoff(s: GameState, ctx: EngineCtx) {
+  s = tick(s, secret, ctx, true)!;
+  return lineDone(s, secret, s.turn!.heldFor!, ctx)!;
+}
+
 function answer(s: GameState, playerId: string, text: string, ctx: EngineCtx) {
   s = s.turn!.kind === "buzz" ? buzz(s, playerId, s.turn!.id, text, ctx) : markJudging(s, playerId, s.turn!.id, text, ctx);
   const turnId = s.turn!.id;
@@ -75,6 +88,7 @@ describe("engine", () => {
     s = tick(s, secret, ctx)!;
     expect(s.phase).toBe("faceoff");
     expect(s.turn!.playerIds).toEqual(["harry", "draco"]);
+    s = lineDone(s, secret, s.turn!.heldFor!, ctx)!;
 
     // A face-off buzz has to carry an answer.
     expect(() => buzz(s, "draco", s.turn!.id, "  ", ctx)).toThrow("Type an answer first");
@@ -117,8 +131,7 @@ describe("engine", () => {
 
   it("locks the buzzer's answer in for judging and gives the other player a shorter reply", () => {
     const ctx = makeCtx();
-    let s = startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx);
-    s = tick(s, secret, ctx, true)!;
+    let s = faceoff(startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx), ctx);
     const buzzTurn = s.turn!.id;
     s = buzz(s, "harry", buzzTurn, " robes ", ctx);
     expect(s.event?.kind).toBe("buzz");
@@ -138,23 +151,96 @@ describe("engine", () => {
     expect(later.hostLine?.cue?.vars.names).toBe("Luna");
   });
 
-  it("reads the question out and holds the intro until the host is done", () => {
+  it("explains the rules first, keeps the question hidden, and holds the intro until the host is done", () => {
     const ctx = makeCtx();
+    const rules = harryPotterContent.lines.rules[0];
     const long = { ...secret, gameIntro: "Welcome! ".repeat(40).trim() };
     const s = startGame(surveyReady(lobby(ctx), long, ctx), long, ctx);
-    expect(s.hostLine?.text.endsWith(long.rounds[0].question)).toBe(true);
+    expect(s.round!.question).toBeNull();
+    expect(s.hostLine?.text).toBe(`${long.gameIntro} ${rules}`);
+    expect(s.hostLine?.text).not.toContain(long.rounds[0].question);
     expect(s.hostLine?.cue).toBeUndefined(); // already AI-written
     expect(s.deadline! - ctx.now).toBeGreaterThan(TIMERS.roundIntro + 4_000);
 
-    // A built-in survey uses the canned intro, cued for the AI, with the question as its tail.
+    // A built-in survey uses the canned intro, cued for the AI, with the rules read out as written after it.
     const canned = startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx);
-    expect(canned.hostLine?.cue).toMatchObject({ key: "gameIntro", tail: secret.rounds[0].question });
+    expect(canned.hostLine?.cue).toMatchObject({ key: "gameIntro", tail: rules });
+
+    // Later rounds don't repeat the rules.
+    let later: GameState = { ...canned, roundIndex: 0, phase: "round_end", deadline: ctx.now - 1, settings: { ...canned.settings, rounds: 2 } };
+    later = tick(later, secret, ctx)!;
+    expect(later.hostLine?.cue).toMatchObject({ key: "roundIntro" });
+    expect(later.hostLine?.cue?.tail).toBeUndefined();
+    expect(later.round!.question).toBeNull();
+
+    // Once the TV has said the intro, the face-off follows after a short beat.
+    const said = lineDone(later, secret, later.hostLine!.id, ctx)!;
+    expect(said.deadline).toBe(ctx.now + TIMERS.afterIntro);
+    expect(lineDone(said, secret, later.hostLine!.id, ctx)).toBeNull();
+  });
+
+  it("holds the face-off until the host has called it, then reveals and reads the question", () => {
+    const ctx = makeCtx();
+    let s = startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx);
+    s = tick(s, secret, ctx, true)!;
+    const turn = s.turn!;
+    expect(turn).toMatchObject({ kind: "buzz", heldFor: s.hostLine!.id });
+    expect(turn.opensAt).toBeGreaterThan(ctx.now);
+    expect(activeDeadline(s)).toBe(turn.opensAt);
+    expect(s.round!.question).toBeNull();
+    expect(() => buzz(s, "harry", turn.id, "wand", ctx)).toThrow("host is still talking");
+
+    // Only the line the turn is waiting on opens it.
+    expect(lineDone(s, secret, "some-other-line", ctx)).toBeNull();
+    ctx.advance(1_500);
+    const open = lineDone(s, secret, turn.heldFor!, ctx)!;
+    expect(open.turn).toMatchObject({ id: turn.id, deadline: ctx.now + TIMERS.buzz });
+    expect(open.turn!.opensAt).toBeUndefined();
+    expect(open.round!.question).toBe(secret.rounds[0].question);
+    expect(open.hostLine!.text).toBe(secret.rounds[0].question);
+    expect(open.event?.kind).toBe("question");
+    expect(buzz(open, "harry", turn.id, "wand", ctx).turn?.judging?.text).toBe("wand");
+
+    // If the TV never says the host is done, the turn opens on its own.
+    ctx.advance(turn.opensAt! - ctx.now);
+    expect(tick(s, secret, ctx)!.round!.question).toBe(secret.rounds[0].question);
+  });
+
+  it("holds a new turn that starts with a new host line", () => {
+    const ctx = makeCtx();
+    const s = faceoff(startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx), ctx);
+    const buzzed = buzz(s, "draco", s.turn!.id, "robes", ctx);
+    // Locking in a buzz starts a judging turn with no new line: nothing to wait for.
+    expect(holdNewTurn(s, buzzed, ctx.now)).toBe(buzzed);
+    const reacted = resolveGuess(buzzed, secret, { turnId: buzzed.turn!.id, playerId: "draco", text: "robes", answerIndex: 1 }, ctx);
+    const held = holdNewTurn(buzzed, reacted, ctx.now);
+    expect(held.turn).toMatchObject({ playerIds: ["harry"], heldFor: reacted.hostLine!.id });
+    expect(held.turn!.deadline).toBe(held.turn!.opensAt! + TIMERS.faceoffReply);
+    expect(() => markJudging(held, "harry", held.turn!.id, "wand", ctx)).toThrow("host is still talking");
+  });
+
+  it("closes the room when the TV leaves for good, or after an hour", () => {
+    const ctx = makeCtx();
+    const s = lobby(ctx);
+    expect(closeReason(s, ctx.now)).toBeNull();
+    const leaving = hostLeaving(s, ctx.now);
+    expect(closeReason(leaving, ctx.now + TIMERS.hostGrace - 1)).toBeNull();
+    expect(closeReason(leaving, ctx.now + TIMERS.hostGrace)).toBe("host_left");
+    // A reload comes back in time and keeps the room open.
+    expect(closeReason(hostBack(leaving)!, ctx.now + TIMERS.hostGrace)).toBeNull();
+    expect(hostBack(s)).toBeNull();
+    expect(closeReason(s, s.createdAt + TIMERS.session)).toBe("expired");
+
+    const closed = closeRoom(s, "host");
+    expect(closed).toMatchObject({ phase: "closed", closed: "host", turn: null, hostLine: null });
+    expect(closeReason(closed, s.createdAt + TIMERS.session)).toBeNull();
   });
 
   it("leaves the buzz to the reaction and cues a line when nobody buzzes", () => {
     const ctx = makeCtx();
     let s = tick(startGame(surveyReady(lobby(ctx), secret, ctx), secret, ctx), secret, ctx, true)!;
     expect(s.hostLine?.cue).toMatchObject({ key: "faceoff", vars: { names: "Harry and Draco" } });
+    s = lineDone(s, secret, s.turn!.heldFor!, ctx)!;
     const buzzed = buzz(s, "harry", s.turn!.id, "robes", ctx);
     expect(buzzed.hostLine).toBe(s.hostLine);
     ctx.advance(TIMERS.buzz);

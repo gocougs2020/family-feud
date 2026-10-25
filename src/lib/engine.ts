@@ -38,6 +38,16 @@ export const TIMERS = {
   preparing: 60_000,
   /** allowance for fetching the host's voice before it starts speaking */
   voiceLead: 3_000,
+  /** how long the TV waits on a line the AI is still writing */
+  linePending: 5_000,
+  /** extra time before a held turn opens on its own, if the TV never says the host is done */
+  holdSlack: 2_000,
+  /** the beat between the host finishing a round's intro and the face-off */
+  afterIntro: 1_500,
+  /** a room lasts at most this long, so abandoned games don't linger */
+  session: 60 * 60_000,
+  /** after the TV window closes, how long it has to come back (e.g. a reload) before the room shuts */
+  hostGrace: 20_000,
   /** how recently someone joined for the host to still greet them */
   greetWindow: 10_000,
 };
@@ -120,7 +130,63 @@ function requireRound(state: GameState): RoundState {
 }
 
 function makeTurn(ctx: EngineCtx, kind: TurnKind, playerIds: string[], team: TeamIndex | null, ms: number): Turn {
-  return { id: ctx.id(), kind, playerIds, team, deadline: ctx.now + ms };
+  return { id: ctx.id(), kind, playerIds, team, deadline: ctx.now + ms, ms };
+}
+
+// ---------------------------------------------------------------- holding turns
+//
+// Players can't act while the host is talking. A turn that starts alongside a
+// new host line is held until that line has been spoken: the TV opens it the
+// moment the host finishes, and an estimate opens it anyway if the TV doesn't.
+
+/** Hold the turn until the host has said the current line (the estimate is re-run once an AI line is written). */
+export function holdTurnForLine(state: GameState, now: number): GameState {
+  const { turn, hostLine: line } = state;
+  if (!turn || !line || turn.heldFor !== line.id || turn.opensAt == null) return state;
+  const opensAt =
+    now + estimateSpeechMs(line.text) + TIMERS.voiceLead + TIMERS.holdSlack + (line.pending ? TIMERS.linePending : 0);
+  return { ...state, turn: { ...turn, opensAt, deadline: opensAt + turn.ms } };
+}
+
+/** Hold a turn that has just started along with a new host line. */
+export function holdNewTurn(prev: GameState, next: GameState, now: number): GameState {
+  const { turn, hostLine: line } = next;
+  if (!turn || !line || turn.judging || turn.id === prev.turn?.id || line.id === prev.hostLine?.id) return next;
+  return holdTurnForLine({ ...next, turn: { ...turn, heldFor: line.id, opensAt: now } }, now);
+}
+
+/** Let players act. Opening the face-off also reveals the question, which the host then reads out. */
+export function openTurn(state: GameState, secret: GameSecret | null, ctx: EngineCtx): GameState | null {
+  const turn = state.turn;
+  if (!turn || turn.opensAt == null) return null;
+  const round = state.round;
+  const question = round && round.question == null ? secret?.rounds[round.index]?.question : undefined;
+  if (round && round.question == null && !question) return null;
+  let next: GameState = { ...state, turn: { ...turn, opensAt: undefined, heldFor: undefined, deadline: ctx.now + turn.ms } };
+  if (round && question) {
+    next = { ...next, round: { ...round, question } };
+    next = emit(next, ctx, { kind: "question" });
+    next = withHostLine(next, ctx, question);
+  }
+  return next;
+}
+
+/**
+ * The TV has finished saying a line: open the turn that was waiting on it, or
+ * end a round's intro after a short beat.
+ */
+export function lineDone(state: GameState, secret: GameSecret | null, lineId: string, ctx: EngineCtx): GameState | null {
+  if (!lineId) return null;
+  if (state.turn?.heldFor === lineId) return openTurn(state, secret, ctx);
+  const soon = ctx.now + TIMERS.afterIntro;
+  if (state.phase === "round_intro" && state.hostLine?.id === lineId && state.deadline != null && state.deadline > soon) {
+    return { ...state, deadline: soon };
+  }
+  return null;
+}
+
+function assertOpen(turn: Turn) {
+  if (turn.opensAt != null) throw new GameError("Hang on, the host is still talking", 409);
 }
 
 /** Next player up for a team, advancing that team's rotation pointer. */
@@ -275,7 +341,7 @@ export function beginRound(
   if (!survey) return endGame(state, ctx);
   const round: RoundState = {
     index,
-    question: survey.question,
+    question: null,
     multiplier: multiplierFor(index, state.settings.rounds),
     board: survey.answers.map(() => ({ revealed: false })),
     bank: 0,
@@ -302,11 +368,13 @@ export function beginRound(
     team: state.teams[0].name,
     other: state.teams[1].name,
   };
-  // The host always reads the question out, after the intro.
-  const written = [firstRound ? secret.gameIntro : undefined, survey.intro].filter(Boolean).join(" ");
+  // The question stays hidden until the face-off opens. Before the first round,
+  // the host explains how to play, read as written so the rules come out right.
+  const rules = firstRound ? pick(ctx.lines.rules ?? [""], ctx.rng) : undefined;
+  const written = firstRound ? secret.gameIntro : survey.intro;
   next = written
-    ? withHostLine(next, ctx, `${written} ${survey.question}`)
-    : say(next, ctx, firstRound ? "gameIntro" : "roundIntro", vars, survey.question);
+    ? withHostLine(next, ctx, [written, rules].filter(Boolean).join(" "))
+    : say(next, ctx, firstRound ? "gameIntro" : "roundIntro", vars, rules);
   return fitDeadlineToLine(next, ctx.now);
 }
 
@@ -328,7 +396,9 @@ function startFaceoff(state: GameState, ctx: EngineCtx): GameState {
     turn: makeTurn(ctx, "buzz", playerIds, null, TIMERS.buzz),
   };
   const names = playerIds.map((id) => playerName(next, id));
-  return say(next, ctx, "faceoff", { names: names.join(" and "), name: names[0] ?? "", other: names[1] ?? "" });
+  const called = say(next, ctx, "faceoff", { names: names.join(" and "), name: names[0] ?? "", other: names[1] ?? "" });
+  // Held until the host has called them up; opening it reveals the question.
+  return holdNewTurn(state, called, ctx.now);
 }
 
 /**
@@ -340,6 +410,7 @@ export function buzz(state: GameState, playerId: string, turnId: string, text: s
   if (state.phase !== "faceoff" || !turn || turn.kind !== "buzz") throw new GameError("Too late!", 409);
   if (turn.id !== turnId) throw new GameError("Too late!", 409);
   if (!turn.playerIds.includes(playerId)) throw new GameError("You're not in this face-off", 403);
+  assertOpen(turn);
   const clean = text.trim().slice(0, LIMITS.answerLength);
   if (!clean) throw new GameError("Type an answer first");
   const team = state.players.find((p) => p.id === playerId)?.team ?? 0;
@@ -367,6 +438,7 @@ export function assertCanAnswer(state: GameState, playerId: string, turnId: stri
   if (!turn || turn.id !== turnId) throw new GameError("That turn is over", 409);
   if (!["faceoff_answer", "answer", "steal"].includes(turn.kind)) throw new GameError("Not time to answer", 409);
   if (!turn.playerIds.includes(playerId)) throw new GameError("It's not your turn", 403);
+  assertOpen(turn);
   return turn;
 }
 
@@ -508,6 +580,7 @@ export function choosePlayPass(
   const turn = state.turn;
   if (state.phase !== "play_or_pass" || !turn || turn.id !== turnId) throw new GameError("Too late!", 409);
   if (!turn.playerIds.includes(playerId)) throw new GameError("It's not your call", 403);
+  assertOpen(turn);
   return choosePlayPassInternal(state, turn.team ?? 0, choice, ctx);
 }
 
@@ -569,6 +642,31 @@ export function endGame(state: GameState, ctx: EngineCtx): GameState {
   return say(next, ctx, winner === "tie" ? "tie" : "gameOver", vars);
 }
 
+// ---------------------------------------------------------------- closing the room
+
+/** Why the room should shut down now, if it should. */
+export function closeReason(state: GameState, now: number): NonNullable<GameState["closed"]> | null {
+  if (state.phase === "closed") return null;
+  if (state.closesAt != null && now >= state.closesAt) return "host_left";
+  if (now - state.createdAt >= TIMERS.session) return "expired";
+  return null;
+}
+
+/** Shut the room down: every screen disconnects and the code stops working. */
+export function closeRoom(state: GameState, reason: NonNullable<GameState["closed"]>): GameState {
+  if (state.phase === "closed") return state;
+  return { ...state, phase: "closed", closed: reason, turn: null, deadline: null, closesAt: undefined, hostLine: null };
+}
+
+/** The TV window has closed: give it a moment to come back before the room shuts. */
+export function hostLeaving(state: GameState, now: number): GameState {
+  return { ...state, closesAt: now + TIMERS.hostGrace };
+}
+
+export function hostBack(state: GameState): GameState | null {
+  return state.closesAt == null ? null : { ...state, closesAt: undefined };
+}
+
 /** Reset to the lobby with the same players for another game. */
 export function resetForReplay(state: GameState, ctx: EngineCtx, teams?: [TeamPreset, TeamPreset]): GameState {
   const next: GameState = {
@@ -595,7 +693,7 @@ export function resetForReplay(state: GameState, ctx: EngineCtx, teams?: [TeamPr
 
 /** The deadline that currently matters, if any. */
 export function activeDeadline(state: GameState): number | null {
-  return state.turn?.deadline ?? state.deadline;
+  return state.turn ? (state.turn.opensAt ?? state.turn.deadline) : state.deadline;
 }
 
 /**
@@ -606,6 +704,8 @@ export function tick(state: GameState, secret: GameSecret | null, ctx: EngineCtx
   const deadline = activeDeadline(state);
   if (!force && (deadline == null || ctx.now < deadline)) return null;
   const turn = state.turn;
+  // A held turn opens (rather than times out) when its wait is up.
+  if (turn?.opensAt != null) return openTurn(state, secret, ctx);
 
   switch (state.phase) {
     case "round_intro":
