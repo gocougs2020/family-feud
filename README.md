@@ -81,7 +81,7 @@ The game needs a database **and** real-time push to every phone. Supabase's free
 
 One thing to know: free Supabase projects **pause after a week of inactivity**. Un-pause from the dashboard before game night, or upgrade if you host often.
 
-AI cost is small. Each game uses one survey-writing call on `AI_MODEL` (Sonnet: one big, quality-sensitive call made while players join). Each guess the local matcher can't decide is one call to a decision model, `AI_JUDGE_MODEL` (`typesafe-ai/jev`): it picks the matching answer from the board's list rather than writing text, so it's quick and cheap. Each host line, including answer reactions and the recap, is one short call on `AI_FAST_MODEL` (Haiku, picked for speed because lines are written live). On top of that, each host line (a sentence or two) is one text-to-speech call to `AI_TTS_MODEL` (`fish-audio/drama-3` by default). Only the TV's host seat can request speech, and only for the line currently on screen.
+AI cost is small. Each game uses one survey-writing call on `AI_MODEL` (`openai/gpt-6.1-sol` with medium reasoning: one big, quality-sensitive call made while players join). Each guess the local matcher can't decide is one call to a decision model, `AI_JUDGE_MODEL` (`typesafe-ai/jev`): it picks the matching answer from the board's list rather than writing text, so it's quick and cheap. Each host line, including answer reactions and the recap, is one short call on `AI_FAST_MODEL` (Haiku, picked for speed because lines are written live). On top of that, each host line (a sentence or two) is one text-to-speech call to `AI_TTS_MODEL` (`fish-audio/drama-3` by default). Only the TV's host seat can request speech, and only for the line currently on screen.
 
 ## How it works
 

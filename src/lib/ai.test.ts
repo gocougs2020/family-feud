@@ -5,10 +5,11 @@ import { harryPotterContent } from "@/packs/harry-potter/content";
 import { harryPotterTheme } from "@/packs/harry-potter/theme";
 import { cueMoment, matchGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeHostLine, writeSurvey } from "./ai";
 
-function mockModel(json: unknown, prompts: string[] = []) {
+function mockModel(json: unknown, prompts: string[] = [], reasoning: unknown[] = []) {
   return new MockLanguageModelV4({
     doGenerate: async (options) => {
       prompts.push(JSON.stringify(options.prompt));
+      reasoning.push(options.reasoning);
       return {
         content: [{ type: "text", text: typeof json === "string" ? json : JSON.stringify(json) }],
         finishReason: { unified: "stop", raw: undefined },
@@ -27,19 +28,25 @@ const answers = (n: number) =>
 
 describe("writeSurvey", () => {
   it("parses, sorts and trims the model's survey", async () => {
+    const reasoning: unknown[] = [];
     const secret = await writeSurvey({
       pack: harryPotterContent,
       rounds: 2,
       teams: ["Gryffindor", "Slytherin"],
-      model: mockModel({
-        gameIntro: "Welcome!",
-        rounds: [
-          { question: "Q1?", intro: "First!", answers: [...answers(5)].reverse() },
-          { question: "Q2?", intro: "Second!", answers: answers(6) },
-          { question: "Q3?", intro: "Extra", answers: answers(5) },
-        ],
-      }),
+      model: mockModel(
+        {
+          gameIntro: "Welcome!",
+          rounds: [
+            { question: "Q1?", intro: "First!", answers: [...answers(5)].reverse() },
+            { question: "Q2?", intro: "Second!", answers: answers(6) },
+            { question: "Q3?", intro: "Extra", answers: answers(5) },
+          ],
+        },
+        [],
+        reasoning,
+      ),
     });
+    expect(reasoning).toEqual(["medium"]);
     expect(secret.source).toBe("ai");
     expect(secret.gameIntro).toBe("Welcome!");
     expect(secret.rounds).toHaveLength(2);
