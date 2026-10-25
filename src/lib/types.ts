@@ -206,6 +206,22 @@ export interface GameSecret {
   gameIntro?: string;
 }
 
+/**
+ * The host's reactions to one round's answers, written ahead (as secret as the
+ * survey, since they name the answers) so a found answer gets a line that's
+ * thought through and already voiced. Indexed like the round's answers.
+ */
+export interface LineBank {
+  /** the question these were written for, so a new game's survey never gets an old bank */
+  question: string;
+  hits: {
+    /** the first answer of the face-off */
+    faceoff?: string;
+    /** a team playing the board */
+    play?: string;
+  }[];
+}
+
 export interface StoredGame {
   id: string;
   code: string;

@@ -1,10 +1,11 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { GameSecret, GameState, StoredGame } from "../types";
+import type { GameSecret, GameState, LineBank, StoredGame } from "../types";
 import type { GameStore, Mutator } from "./types";
 
 // Production store. Public game state lives in `games` (readable by anyone,
 // published to Supabase Realtime); hidden answers live in `game_secrets`
-// (no RLS policies, so only this service-role client can touch it).
+// (no RLS policies, so only this service-role client can touch it), as do the
+// host's lines written ahead for each round, in `game_line_banks`.
 
 let client: SupabaseClient | null = null;
 
@@ -107,6 +108,22 @@ export const supabaseStore: GameStore = {
 
   async setSecret(id, secret) {
     const { error } = await db().from("game_secrets").upsert({ game_id: id, secret });
+    if (error) throw new Error(error.message);
+  },
+
+  async getBank(id, roundIndex) {
+    const { data, error } = await db()
+      .from("game_line_banks")
+      .select("bank")
+      .eq("game_id", id)
+      .eq("round_index", roundIndex)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data?.bank as LineBank | undefined) ?? null;
+  },
+
+  async setBank(id, roundIndex, bank) {
+    const { error } = await db().from("game_line_banks").upsert({ game_id: id, round_index: roundIndex, bank });
     if (error) throw new Error(error.message);
   },
 };

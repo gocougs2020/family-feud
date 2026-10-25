@@ -11,8 +11,8 @@ import {
 } from "ai";
 import { z } from "zod";
 import type { PackContent, PackTheme } from "@/packs/types";
-import { plainText, withCue } from "./captions";
-import type { GameSecret, GameState, HostCue, SurveyRound } from "./types";
+import { plainText, VOICE_SPEED, withCue } from "./captions";
+import type { GameSecret, GameState, HostCue, LineBank, SurveyRound } from "./types";
 
 // Everything AI goes through the Vercel AI Gateway: plain "provider/model"
 // strings resolve via the gateway, authenticated by AI_GATEWAY_API_KEY locally
@@ -24,7 +24,7 @@ import type { GameSecret, GameState, HostCue, SurveyRound } from "./types";
 //   it can afford to think.
 // - FAST_MODEL (Haiku, reasoning off) writes the host's lines: short, many per
 //   game, and live, so it has to be quick. Haiku thinks by default, which eats
-//   the tiny output budget and the 3s deadline, so reasoning is switched off;
+//   the tiny output budget and the 5s deadline, so reasoning is switched off;
 //   the persona, sampled riffs and recent lines carry the quality instead.
 // - JUDGE_MODEL (a decision model) decides whether a guess matches an answer:
 //   a pick from a list, not writing, so it needs no chat model at all.
@@ -33,6 +33,9 @@ const MODEL = process.env.AI_MODEL ?? "openai/gpt-6.1-sol";
 const FAST_MODEL = process.env.AI_FAST_MODEL ?? "anthropic/claude-haiku-5.5";
 const JUDGE_MODEL = process.env.AI_JUDGE_MODEL ?? "typesafe-ai/jev";
 const TTS_MODEL = process.env.AI_TTS_MODEL ?? "fish-audio/drama-3";
+
+/** How long Haiku gets to write a live host line before the canned one is used. */
+const HOST_LINE_TIMEOUT_MS = 5_000;
 
 export function aiEnabled(): boolean {
   if (process.env.AI_DISABLED === "1") return false;
@@ -241,7 +244,7 @@ export async function writeHostLine(input: {
   const { text } = await generateText({
     model: input.model ?? FAST_MODEL,
     reasoning: "none",
-    timeout: 3_000,
+    timeout: HOST_LINE_TIMEOUT_MS,
     maxRetries: 0,
     maxOutputTokens: 120,
     instructions: `You are the host of a live Family Feud style game show. Persona: ${input.pack.hostPersona}\n\n${SPOKEN}`,
@@ -260,6 +263,94 @@ export function trimLine(text: string, max: number): string {
   const sentence = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
   if (sentence > max * 0.4) return cut.slice(0, sentence + 1);
   return cut.slice(0, cut.lastIndexOf(" ")).replace(/[,;:\-]$/, "") + "…";
+}
+
+// ------------------------------------------------------------ line bank
+//
+// A found answer can't be reacted to until it's found, but which answers can
+// be found is known from the start. So while the round is still coming up, the
+// survey model, with time to think, writes the host's reaction to every answer
+// on the board, and they're voiced ahead too: a hit then gets a line that's
+// sharper than one dashed off live, with no wait for the writing or the voice.
+// Misses, which depend on what was typed, are still written live.
+
+const bankSchema = z.object({
+  answers: z
+    .array(
+      z.object({
+        answer: z.string().describe("The board answer, exactly as given."),
+        faceoff: z.string().describe("Said when this is the first answer given in the face-off."),
+        play: z.string().describe("Said when a team playing the board finds this."),
+      }),
+    )
+    .describe("One entry per board answer, in board order."),
+});
+
+const words = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+/** Does a line name another answer on the board (still hidden when it's said)? */
+function namesAnother(line: string, answers: SurveyRound["answers"], index: number): boolean {
+  const said = ` ${words(line)} `;
+  return answers.some((a, j) => {
+    if (j === index) return false;
+    const own = words(answers[index].text);
+    // The answer, its singular ("Socks" → "sock"), and longer aliases (short ones are too often ordinary words).
+    return [a.text, a.text.replace(/s$/i, ""), ...a.aliases.filter((alias) => alias.length >= 5)]
+      .map(words)
+      .some((name) => name.length >= 3 && !own.includes(name) && said.includes(` ${name} `));
+  });
+}
+
+/** Write the host's reactions to every answer on one round's board. */
+export async function writeLineBank(input: {
+  pack: PackContent;
+  round: SurveyRound;
+  roundNumber: number;
+  rounds: number;
+  model?: LanguageModel;
+}): Promise<LineBank> {
+  const { round } = input;
+  const board = round.answers.map((a, i) => `${i + 1}. ${a.text} (${a.points})`).join("\n");
+  const riffs = input.pack.hostRiffs?.length
+    ? `Comic angles you can draw on, spread across the set (none more than twice, and plenty of lines need none):\n${input.pack.hostRiffs.map((r) => `- ${r}`).join("\n")}\n\n`
+    : "";
+  const { output } = await generateText({
+    model: input.model ?? MODEL,
+    reasoning: "medium",
+    timeout: 45_000,
+    maxRetries: 0,
+    instructions: `You write the host's lines for a live Family Feud style game show. Persona: ${input.pack.hostPersona}\n\n${SPOKEN}`,
+    output: Output.object({ schema: bankSchema }),
+    prompt: `Round ${input.roundNumber} of ${input.rounds}. We surveyed ${input.pack.audience}: "${round.question}"
+The board, most popular first (points in brackets):
+${board}
+
+For every answer, write what the host says the instant a player's guess flips that tile over. The host has just read the guess out and said "Survey says…", the tile turns, and this is the reaction, so it has to sound off the cuff and alive, like the host is seeing it for the first time and has a take on it, never like a script.
+
+Two versions per answer:
+- faceoff: the head-to-head face-off, and this is the first answer given. The number one answer wins the face-off outright; any other leaves the rival a chance to beat it, which you can needle them about now and then (not every time).
+- play: a team is working its way down the board, banking points.
+
+Make every line earn its laugh:
+- It's about this answer: what it says about the sort of person who'd say it, a joke only this answer allows, the host's opinion of it. Swap the answer for another and the line should stop working.
+- Real speech: contractions, fragments, asides, a beat of mock outrage or delight. Range from a punchy three-word reaction to two short sentences; under 30 words.
+- Every line in this set opens differently and makes a different joke. Number one gets proper fanfare; the bottom answers can get surprise that they made the board at all.
+- Don't name a player or a team (you don't know who'll say it), don't say "survey says", don't read out the points, and never mention any other answer on the board: they're still hidden.
+
+${riffs}Return the answers in board order, each with its two lines.`,
+  });
+  const byText = new Map(output.answers.map((a) => [words(a.answer), a]));
+  const line = (text: string | undefined, i: number) => {
+    const clean = text ? cleanLine(text) : "";
+    return clean && !namesAnother(clean, round.answers, i) ? clean : undefined;
+  };
+  return {
+    question: round.question,
+    hits: round.answers.map((a, i) => {
+      const written = byText.get(words(a.text)) ?? output.answers[i];
+      return { faceoff: line(written?.faceoff, i), play: line(written?.play, i) };
+    }),
+  };
 }
 
 // ------------------------------------------------------------ recap
@@ -299,10 +390,16 @@ export function voiceIdFor(packId: string, voice: PackTheme["voice"]): string | 
 }
 
 /**
- * Voice one host line. Returns encoded audio (the model's default format).
+ * Voice one host line (or one sentence of it). Returns encoded audio (the
+ * model's default format) and the rate to play it at.
  * Fish Audio takes no instructions: it reads delivery from [cues] in the
  * text, so every sentence gets the pack's cue unless the line has its own.
  * Other models get the plain line, with the delivery notes as instructions.
+ *
+ * The host talks a touch faster than the model's natural pace. The model is
+ * asked for that speed itself, which sounds cleaner than speeding the clip up
+ * in the browser; if the gateway reports the model ignored it (or
+ * AI_TTS_NATIVE_SPEED=0), the clip says to speed it up on playback instead.
  */
 export async function speakHostLine(
   text: string,
@@ -311,13 +408,31 @@ export async function speakHostLine(
 ) {
   const model = opts.model ?? gateway.speech(TTS_MODEL);
   const cues = (typeof model === "string" ? model : model.modelId).startsWith("fish-audio/");
-  const { audio } = await generateSpeech({
+  const native = process.env.AI_TTS_NATIVE_SPEED !== "0";
+  const { audio, warnings } = await generateSpeech({
     model,
     text: cues ? withCue(text, voice.cue) : plainText(text),
     voice: voiceIdFor(opts.packId ?? "", voice),
     instructions: cues ? undefined : voice.style,
+    speed: native ? VOICE_SPEED : undefined,
     maxRetries: 1,
     abortSignal: AbortSignal.timeout(15_000),
   });
-  return { bytes: audio.uint8Array, mediaType: audio.mediaType || "audio/mpeg" };
+  const ignored = warnings.some(
+    (w) => (w.type === "unsupported" && /speed/i.test(w.feature)) || (w.type === "other" && /speed/i.test(w.message)),
+  );
+  if (native && ignored) warnSpeedOnce();
+  return {
+    bytes: audio.uint8Array,
+    mediaType: audio.mediaType || "audio/mpeg",
+    /** playback rate for the browser: 1 when the model already spoke at speed */
+    rate: native && !ignored ? 1 : VOICE_SPEED,
+  };
+}
+
+let warnedSpeed = false;
+function warnSpeedOnce() {
+  if (warnedSpeed) return;
+  warnedSpeed = true;
+  console.warn(`[feud] ${TTS_MODEL} ignores the speed setting; speeding the host up in the browser instead`);
 }

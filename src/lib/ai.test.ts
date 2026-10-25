@@ -3,7 +3,8 @@ import { MockLanguageModelV4, MockSpeechModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { harryPotterContent } from "@/packs/harry-potter/content";
 import { harryPotterTheme } from "@/packs/harry-potter/theme";
-import { cueMoment, matchGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeHostLine, writeSurvey } from "./ai";
+import { cueMoment, matchGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeHostLine, writeLineBank, writeSurvey } from "./ai";
+import { VOICE_SPEED } from "./captions";
 
 function mockModel(json: unknown, prompts: string[] = [], reasoning: unknown[] = []) {
   return new MockLanguageModelV4({
@@ -154,17 +155,40 @@ describe("writeHostLine", () => {
 });
 
 describe("speakHostLine", () => {
-  const speechModel = (modelId: string, calls: { text: string; instructions?: string; voice?: string }[]) =>
+  type Call = { text: string; instructions?: string; voice?: string; speed?: number };
+  type Warnings = Awaited<ReturnType<MockSpeechModelV4["doGenerate"]>>["warnings"];
+  const speechModel = (modelId: string, calls: Call[], warnings: Warnings = []) =>
     new MockSpeechModelV4({
       modelId,
       doGenerate: async (options) => {
         calls.push(options);
-        return { audio: new Uint8Array([73, 68, 51]), warnings: [], response: { timestamp: new Date(), modelId } };
+        return { audio: new Uint8Array([73, 68, 51]), warnings, response: { timestamp: new Date(), modelId } };
       },
     });
 
+  it("asks the model to talk at the host's pace, so the browser plays it as is", async () => {
+    const calls: Call[] = [];
+    const clip = await speakHostLine("Good answer!", harryPotterTheme.voice, { model: speechModel("fish-audio/drama-3", calls) });
+    expect(calls[0].speed).toBe(VOICE_SPEED);
+    expect(clip.rate).toBe(1);
+  });
+
+  it("has the browser speed it up when the model ignores the speed", async () => {
+    const ignored = await speakHostLine("Good answer!", harryPotterTheme.voice, {
+      model: speechModel("fish-audio/drama-3", [], [{ type: "unsupported", feature: "speed" }]),
+    });
+    expect(ignored.rate).toBe(VOICE_SPEED);
+
+    const calls: Call[] = [];
+    process.env.AI_TTS_NATIVE_SPEED = "0";
+    const off = await speakHostLine("Good answer!", harryPotterTheme.voice, { model: speechModel("fish-audio/drama-3", calls) });
+    delete process.env.AI_TTS_NATIVE_SPEED;
+    expect(calls[0].speed).toBeUndefined();
+    expect(off.rate).toBe(VOICE_SPEED);
+  });
+
   it("gives Fish Audio the pack's delivery as inline cues, not instructions", async () => {
-    const calls: { text: string; instructions?: string; voice?: string }[] = [];
+    const calls: Call[] = [];
     process.env.AI_TTS_VOICE_HARRY_POTTER = "voice-123";
     const clip = await speakHostLine("Ron says rat. [dramatic pause] Survey says…", harryPotterTheme.voice, {
       packId: "harry-potter",
@@ -178,7 +202,7 @@ describe("speakHostLine", () => {
   });
 
   it("gives other speech models the plain line and the delivery notes", async () => {
-    const calls: { text: string; instructions?: string }[] = [];
+    const calls: Call[] = [];
     await speakHostLine("[scoffs] Not even close.", harryPotterTheme.voice, { model: speechModel("openai/tts-1", calls) });
     expect(calls[0]).toMatchObject({ text: "Not even close.", instructions: harryPotterTheme.voice.style });
   });
@@ -191,6 +215,68 @@ describe("speakHostLine", () => {
     delete process.env.AI_TTS_VOICE;
     delete process.env.AI_TTS_VOICE_CLASSIC;
     expect(voiceIdFor("classic", harryPotterTheme.voice)).toBeUndefined();
+  });
+});
+
+describe("writeLineBank", () => {
+  const round = {
+    question: "Name something Dobby the house-elf loves.",
+    answers: [
+      { text: "Socks", points: 48, aliases: ["sock"] },
+      { text: "Harry Potter", points: 26, aliases: ["harry"] },
+      { text: "Freedom", points: 12, aliases: ["being free"] },
+    ],
+  };
+
+  it("writes a reaction to every answer, matched to the board by name", async () => {
+    const prompts: string[] = [];
+    const reasoning: unknown[] = [];
+    const bank = await writeLineBank({
+      pack: harryPotterContent,
+      round,
+      roundNumber: 1,
+      rounds: 4,
+      model: mockModel(
+        {
+          answers: [
+            { answer: "freedom", faceoff: "Freedom! [gasps] How very noble.", play: "Free at last, and on the board." },
+            { answer: "Socks", faceoff: '"Socks! Of course it is."', play: "*beams* Socks. I gave him a pair myself." },
+            { answer: "Harry Potter", faceoff: "Harry! Naturally.", play: "The boy who lived, and loves." },
+          ],
+        },
+        prompts,
+        reasoning,
+      ),
+    });
+    expect(bank.question).toBe(round.question);
+    expect(bank.hits).toEqual([
+      { faceoff: "Socks! Of course it is.", play: "Socks. I gave him a pair myself." },
+      { faceoff: "Harry! Naturally.", play: "The boy who lived, and loves." },
+      { faceoff: "Freedom! [gasps] How very noble.", play: "Free at last, and on the board." },
+    ]);
+    expect(reasoning).toEqual(["medium"]);
+    expect(prompts[0]).toContain("1. Socks (48)");
+  });
+
+  it("drops a line that would give away another answer still on the board", async () => {
+    const bank = await writeLineBank({
+      pack: harryPotterContent,
+      round,
+      roundNumber: 1,
+      rounds: 4,
+      model: mockModel({
+        answers: [
+          { answer: "Socks", faceoff: "Socks! Better than freedom, apparently.", play: "Socks. Predictable." },
+          { answer: "Harry Potter", faceoff: "Harry Potter! Who else?", play: "Harry, over a sock? Bold." },
+          { answer: "Freedom", faceoff: "Freedom, and a free elf at that.", play: "Freedom!" },
+        ],
+      }),
+    });
+    expect(bank.hits[0]).toEqual({ faceoff: undefined, play: "Socks. Predictable." });
+    // A line may name its own answer, and words that only appear inside it.
+    expect(bank.hits[1].faceoff).toBe("Harry Potter! Who else?");
+    expect(bank.hits[1].play).toBeUndefined();
+    expect(bank.hits[2].faceoff).toBe("Freedom, and a free elf at that.");
   });
 });
 

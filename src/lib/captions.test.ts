@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { captionAt, estimateSpeechMs, plainText, splitCaptions, withCue } from "./captions";
+import { captionAt, estimateSpeechMs, partShares, plainText, splitCaptions, voiceParts, withCue } from "./captions";
+import { SURVEY_SAYS } from "./engine";
 
 describe("delivery cues", () => {
   it("are never shown", () => {
@@ -53,5 +54,32 @@ describe("captionAt", () => {
 
   it("estimates a faster rate as a shorter line", () => {
     expect(estimateSpeechMs("Hello there, everyone.", 1.2)).toBeLessThan(estimateSpeechMs("Hello there, everyone."));
+  });
+});
+
+describe("voiceParts", () => {
+  it("voices a line a sentence at a time", () => {
+    expect(voiceParts("Welcome back to the show, everyone! Our next question is a tricky one.")).toEqual([
+      "Welcome back to the show, everyone!",
+      "Our next question is a tricky one.",
+    ]);
+  });
+
+  it("folds short bits into the next sentence, keeping their cues", () => {
+    expect(voiceParts("[gasps] Oh! Number one, of course it is.")).toEqual(["[gasps] Oh! Number one, of course it is."]);
+    expect(voiceParts("That's the one, I'd know it anywhere. Fine.")).toEqual(["That's the one, I'd know it anywhere. Fine."]);
+  });
+
+  it("keeps \"Survey says…\" its own piece, so its voice is reused", () => {
+    expect(voiceParts(`Ron says rat. ${SURVEY_SAYS}`)).toEqual(["Ron says rat.", SURVEY_SAYS]);
+    expect(voiceParts(`Al says owl. ${SURVEY_SAYS}`)).toEqual(["Al says owl.", SURVEY_SAYS]);
+  });
+
+  it("shares a line's progress out by how long each piece takes to say", () => {
+    const shares = partShares(["A short one.", "A much, much longer second sentence."]);
+    expect(shares[0].start).toBe(0);
+    expect(shares[0].share).toBeLessThan(shares[1].share);
+    expect(shares[1].start + shares[1].share).toBeCloseTo(1);
+    expect(voiceParts("")).toEqual([]);
   });
 });

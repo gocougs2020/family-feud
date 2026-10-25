@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { GameSecret, GameState, StoredGame } from "../types";
+import type { GameSecret, GameState, LineBank, StoredGame } from "../types";
 import type { GameStore, Mutator } from "./types";
 
 // Zero-setup store for local development: everything lives in this Node
@@ -8,6 +8,8 @@ import type { GameStore, Mutator } from "./types";
 
 interface Entry extends StoredGame {
   secret: GameSecret | null;
+  /** optional: rooms from before a hot reload don't have it */
+  banks?: Map<number, LineBank>;
   updatedAt: number;
 }
 
@@ -55,7 +57,7 @@ export const memoryStore: GameStore = {
   async create(code, state) {
     sweep();
     if (mem.byCode.has(code)) throw new Error("code taken");
-    const entry: Entry = { id: crypto.randomUUID(), code, version: 1, state, secret: null, updatedAt: Date.now() };
+    const entry: Entry = { id: crypto.randomUUID(), code, version: 1, state, secret: null, banks: new Map(), updatedAt: Date.now() };
     mem.games.set(entry.id, entry);
     mem.byCode.set(code, entry.id);
     return view(entry);
@@ -97,6 +99,15 @@ export const memoryStore: GameStore = {
   async setSecret(id, secret) {
     const entry = mem.games.get(id);
     if (entry) entry.secret = secret;
+  },
+
+  async getBank(id, roundIndex) {
+    return mem.games.get(id)?.banks?.get(roundIndex) ?? null;
+  },
+
+  async setBank(id, roundIndex, bank) {
+    const entry = mem.games.get(id);
+    if (entry) (entry.banks ??= new Map()).set(roundIndex, bank);
   },
 };
 
