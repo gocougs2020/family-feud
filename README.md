@@ -8,6 +8,8 @@ It deploys for **free** in about two minutes, with **no AI costs**. When you wan
 
 **[Live demo](https://family-feud-self.vercel.app)** · **[Deploy free](#deploy-your-own-free)** · **[Level up with AI](#level-up-turn-on-the-ai-host)** · **[Make your own pack](docs/creating-a-pack.md)** · **[Security](SECURITY.md)**
 
+Built by **[@gocougs2020](https://github.com/gocougs2020)**.
+
 > Fan-made party game. Not affiliated with or endorsed by Family Feud / Fremantle, J.K. Rowling, Warner Bros. or Wizarding World. The packs contain no official art, music or logos. All visuals and music are generated in code.
 
 ---
@@ -47,12 +49,13 @@ Difficulty sets both the questions and the judging:
 
 One click, no credit card, and nothing to configure by hand:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgocougs2020%2Ffamily-feud&project-name=family-feud&repository-name=family-feud&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22supabase%22%2C%22productSlug%22%3A%22supabase%22%2C%22protocol%22%3A%22storage%22%7D%5D&env=AI_DISABLED&envDefaults=%7B%22AI_DISABLED%22%3A%221%22%7D&envDescription=Keep%20AI_DISABLED%3D1%20for%20a%20%240%20deployment%3A%20built-in%20questions%2C%20browser%20voice%2C%20no%20AI%20usage.%20Set%20it%20to%200%20later%20to%20turn%20on%20the%20AI%20host.&envLink=https%3A%2F%2Fgithub.com%2Fgocougs2020%2Ffamily-feud%23level-up-turn-on-the-ai-host)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgocougs2020%2Ffamily-feud&project-name=family-feud&repository-name=family-feud&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22supabase%22%2C%22productSlug%22%3A%22supabase%22%2C%22protocol%22%3A%22storage%22%7D%5D)
 
 1. **Sign in to Vercel** (the free Hobby plan is enough). Vercel copies this repo to your GitHub account.
 2. **Add Supabase** when asked, and choose the **Free** plan. That creates the database and sets every Supabase variable for you.
-3. **Leave `AI_DISABLED` set to `1`.** That's the free switch: the game never calls an AI model, so there's nothing to pay for.
-4. **Click Deploy.** The build creates the database tables on its own (`scripts/migrate.mjs`), so there's no SQL to paste.
+3. **Click Deploy.** The build creates the database tables on its own (`scripts/migrate.mjs`), so there's no SQL to paste.
+
+There's no AI key to add, and that's what keeps it free: without one, the game never calls an AI model.
 
 Open your new site on a TV or laptop and create a game. The footer of the home page shows "Sync: Supabase Realtime" when everything is connected.
 
@@ -62,7 +65,7 @@ Open your new site on a TV or laptop and create a game. The footer of the home p
 | --- | --- | --- |
 | Vercel (hosting) | Hobby | $0 |
 | Supabase (database + real-time) | Free | $0 |
-| AI | Off (`AI_DISABLED=1`) | $0 |
+| AI | Off (no API key) | $0 |
 
 ### What you get on the free setup
 
@@ -82,7 +85,7 @@ Set these on your Vercel project (Production and Preview), then redeploy:
 | `SUPABASE_SECRET_KEY` | Project Settings → API Keys → secret (or legacy `service_role`) key. Copy it from the dashboard: the Supabase CLI shows new-style secret keys masked. |
 | `POSTGRES_URL_NON_POOLING` | Connect → Session pooler connection string (used only to run migrations at build time) |
 | `SESSION_SECRET` *(optional)* | Any long random string, e.g. `openssl rand -base64 32`. It defaults to the Supabase secret key. |
-| `AI_DISABLED` | `1` for a free, AI-free deployment. Leave it unset to turn the AI host on. |
+| `AI_GATEWAY_API_KEY` *(optional)* | Turns the AI host on. See [Level up](#level-up-turn-on-the-ai-host). Leave it unset for a free deployment. |
 
 Without `POSTGRES_URL_NON_POOLING`, run the files in [`supabase/migrations`](supabase/migrations) in order in the SQL editor instead, or run `pnpm db:migrate` from your machine.
 
@@ -121,23 +124,35 @@ Start free, then turn things on as you go. Each step is an environment variable,
 
 | Level | What to set | What you get | AI cost |
 | --- | --- | --- | --- |
-| **1. Free** | `AI_DISABLED=1` | Built-in surveys, hand-written host lines, the browser's voice | $0 |
-| **2. AI writer** | Remove `AI_DISABLED` and set `AI_VOICE_DISABLED=1` | A new survey every game, **Any Topic**, AI answer judging, and host lines written live for each moment of the game. The browser still does the voice. | Low |
-| **3. Full show** | Remove `AI_DISABLED` | Everything above, plus a real performed voice for the host (Fish Audio `drama-3`), a sentence at a time with synced captions | Higher (text-to-speech is most of the cost) |
+| **1. Free** | Nothing (no API key) | Built-in surveys, hand-written host lines, the browser's voice | $0 |
+| **2. AI writer** | `AI_GATEWAY_API_KEY` and `AI_VOICE_DISABLED=1` | A new survey every game, **Any Topic**, AI answer judging, and host lines written live for each moment of the game. The browser still does the voice. | Low |
+| **3. Full show** | `AI_GATEWAY_API_KEY` | Everything above, plus a real performed voice for the host (Fish Audio `drama-3`), a sentence at a time with synced captions | Higher (text-to-speech is most of the cost) |
 | **4. Make it yours** | Model, voice and pack settings below | Pick the models, cast a voice for each pack, build your own packs | You choose |
 
 ### Turning it on
 
-**On Vercel:** open your project → **Settings → Environment Variables**, delete `AI_DISABLED` (or set it to `0`), then **Deployments → ⋯ → Redeploy**. Vercel deployments sign in to the [AI Gateway](https://vercel.com/docs/ai-gateway) on their own with a short-lived OIDC token, so there's **no API key to create, paste or leak**. Usage is paid from your Vercel team's AI Gateway credits.
+All AI runs on a single [AI Gateway](https://vercel.com/docs/ai-gateway) API key. AI is on only when the key is set, so the key's budget is the most the game can ever spend.
 
-**Locally:** [create an AI Gateway key](https://vercel.com/d?to=/[team]/~/ai/api-keys) in your Vercel dashboard and put it in `.env.local`, which git ignores:
+1. **Create a key with a budget.** In the Vercel dashboard, go to [AI Gateway → API Keys](https://vercel.com/d?to=/[team]/~/ai/api-keys), create a key, and give it a spend limit (for example $10 a month). Or use the CLI:
+
+   ```bash
+   vercel ai-gateway api-keys create --name family-feud --limit 10 --refresh-period monthly
+   ```
+
+   The key is shown once. Copy it straight into the next step, not into a file in this repo.
+2. **Add it to your project.** Open **Settings → Environment Variables**, add `AI_GATEWAY_API_KEY`, mark it **Sensitive**, and pick the environments that should have AI (Production, and Preview if you want AI in preview deployments).
+3. **Redeploy** (Deployments → ⋯ → Redeploy). The home page footer shows "AI host: on".
+
+When the key hits its limit, model calls are refused and the game carries on with its free fallbacks until the budget resets. Change the limit at any time in the dashboard, or with `vercel ai-gateway budgets set api-key family-feud --limit 20`.
+
+**Locally:** use the same kind of key in `.env.local`, which git ignores:
 
 ```bash
 cp .env.example .env.local
 # then set AI_GATEWAY_API_KEY=... in .env.local
 ```
 
-The home page footer shows "AI host: on" when it's working.
+The key only ever lives in your Vercel project settings or your own `.env.local`. It's never in the code, the repo or the browser.
 
 ### What the AI host does
 
@@ -149,8 +164,9 @@ The home page footer shows "AI host: on" when it's working.
 
 ### Keeping AI costs in check
 
-- **Credits are prepaid.** The AI Gateway spends credits you've bought, so a busy night can't send you a surprise bill. If credits run out, the game keeps working on its free fallbacks. Leave auto top-up off for a firm cap.
-- **Set a budget** in the AI Gateway section of the Vercel dashboard, or with `vercel ai-gateway budgets set team --limit 10 --refresh-period monthly`.
+- **The key's budget is a hard cap.** Every AI call the game makes goes through that one key, and when it reaches its limit, calls stop and the game keeps going on its free fallbacks.
+- **Credits are prepaid.** The AI Gateway spends credits you've bought, so a busy night can't send you a surprise bill. Leave auto top-up off for a firm ceiling.
+- **Kill switch:** set `AI_DISABLED=1` to turn the AI off without deleting the key.
 - **Drop the voice** with `AI_VOICE_DISABLED=1`. Text-to-speech is billed per sentence and is most of what a game spends.
 - **Use cheaper models** for the big jobs, e.g. `AI_MODEL=anthropic/claude-haiku-5.5` for survey writing.
 - **Rate-limit game creation** if your URL is public. [SECURITY.md](SECURITY.md#protect-your-ai-budget-if-you-turn-ai-on) has a ready-made Vercel Firewall rule.
@@ -191,7 +207,7 @@ Ideas: your family's inside jokes, a company offsite pack, a pack for your favor
 The project is built to be safe to fork and host publicly. The short version:
 
 - **No secrets in the repo**, in the code or its history. `.env*` files are git-ignored, and `.env.example` only lists variable names.
-- **No AI key on Vercel.** Deployments use short-lived OIDC tokens. A local key lives only in `.env.local`.
+- **One AI key, kept out of the code.** The AI Gateway key lives only in your Vercel project settings (as a Sensitive variable) or your own git-ignored `.env.local`, and it carries its own spend limit.
 - **Only public values reach the browser:** the Supabase URL and publishable key, which can read nothing but public game state.
 - **Hidden answers stay on the server**, in tables with Row Level Security on and no policies, until they're revealed on the board.
 - **Signed seats.** The TV and each phone get an HMAC-signed token tied to one game and one role, so a phone can't act as the TV or as another player. All rules run on the server.

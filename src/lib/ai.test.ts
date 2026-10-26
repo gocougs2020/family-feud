@@ -241,6 +241,17 @@ describe("speakHostLine", () => {
 });
 
 describe("cost switches", () => {
+  it("runs AI only off the gateway API key, never Vercel's OIDC token", () => {
+    process.env.VERCEL = "1";
+    process.env.VERCEL_OIDC_TOKEN = "oidc";
+    expect(aiEnabled()).toBe(false);
+    process.env.AI_GATEWAY_API_KEY = "test-key";
+    expect(aiEnabled()).toBe(true);
+    delete process.env.AI_GATEWAY_API_KEY;
+    delete process.env.VERCEL_OIDC_TOKEN;
+    delete process.env.VERCEL;
+  });
+
   it("turns everything off with AI_DISABLED, and just the voice with AI_VOICE_DISABLED", () => {
     process.env.AI_GATEWAY_API_KEY = "test-key";
     expect([aiEnabled(), aiVoiceEnabled()]).toEqual([true, true]);

@@ -16,8 +16,9 @@ import { acceptedNames, DEFAULT_DIFFICULTY } from "./difficulty";
 import type { Difficulty, GameSecret, GameState, HostCue, LineBank, SurveyRound } from "./types";
 
 // Everything AI goes through the Vercel AI Gateway: plain "provider/model"
-// strings resolve via the gateway, authenticated by AI_GATEWAY_API_KEY locally
-// or automatically via OIDC when deployed on Vercel.
+// strings resolve via the gateway, authenticated by AI_GATEWAY_API_KEY, locally
+// and when deployed. AI is on only when that key is set, so every call is
+// billed to one key and its budget caps what the game can spend.
 //
 // Each job gets the model that suits it:
 // - MODEL (GPT-6.1 Sol, medium reasoning) writes the survey: one big,
@@ -40,9 +41,9 @@ const HOST_LINE_TIMEOUT_MS = 5_000;
 
 export function aiEnabled(): boolean {
   if (process.env.AI_DISABLED === "1") return false;
-  // On Vercel the gateway authenticates with the per-request OIDC token, which
-  // isn't always exposed as an env var at runtime, so being on Vercel is enough.
-  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
+  // Key only: a deployment without one never falls back to Vercel's OIDC token,
+  // so no AI usage happens outside the key's budget.
+  return Boolean(process.env.AI_GATEWAY_API_KEY);
 }
 
 /** Whether the host is voiced by the gateway's speech model; off, the TV uses the browser's free voice. */
