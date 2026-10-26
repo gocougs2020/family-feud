@@ -3,7 +3,7 @@ import { MockLanguageModelV4, MockSpeechModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { harryPotterContent } from "@/packs/harry-potter/content";
 import { harryPotterTheme } from "@/packs/harry-potter/theme";
-import { cueMoment, matchGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeHostLine, writeLineBank, writeSurvey } from "./ai";
+import { aiEnabled, aiVoiceEnabled, cueMoment, matchGuess, normalizeSurvey, speakHostLine, trimLine, voiceIdFor, writeHostLine, writeLineBank, writeSurvey } from "./ai";
 import { VOICE_SPEED } from "./captions";
 
 function mockModel(json: unknown, prompts: string[] = [], reasoning: unknown[] = []) {
@@ -237,6 +237,31 @@ describe("speakHostLine", () => {
     delete process.env.AI_TTS_VOICE;
     delete process.env.AI_TTS_VOICE_CLASSIC;
     expect(voiceIdFor("classic", harryPotterTheme.voice)).toBeUndefined();
+  });
+});
+
+describe("cost switches", () => {
+  it("runs AI only off the gateway API key, never Vercel's OIDC token", () => {
+    process.env.VERCEL = "1";
+    process.env.VERCEL_OIDC_TOKEN = "oidc";
+    expect(aiEnabled()).toBe(false);
+    process.env.AI_GATEWAY_API_KEY = "test-key";
+    expect(aiEnabled()).toBe(true);
+    delete process.env.AI_GATEWAY_API_KEY;
+    delete process.env.VERCEL_OIDC_TOKEN;
+    delete process.env.VERCEL;
+  });
+
+  it("turns everything off with AI_DISABLED, and just the voice with AI_VOICE_DISABLED", () => {
+    process.env.AI_GATEWAY_API_KEY = "test-key";
+    expect([aiEnabled(), aiVoiceEnabled()]).toEqual([true, true]);
+    process.env.AI_VOICE_DISABLED = "1";
+    expect([aiEnabled(), aiVoiceEnabled()]).toEqual([true, false]);
+    delete process.env.AI_VOICE_DISABLED;
+    process.env.AI_DISABLED = "1";
+    expect([aiEnabled(), aiVoiceEnabled()]).toEqual([false, false]);
+    delete process.env.AI_DISABLED;
+    delete process.env.AI_GATEWAY_API_KEY;
   });
 });
 

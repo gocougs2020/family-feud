@@ -81,6 +81,8 @@ export type GameSnapshot = {
   realtime: RealtimeConfig;
   store: "memory" | "supabase";
   ai: boolean;
+  /** The host is voiced by the AI speech model (otherwise the browser's voice). */
+  voice: boolean;
   now: number;
 };
 

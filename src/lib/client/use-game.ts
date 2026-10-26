@@ -13,7 +13,7 @@ function supabaseClient(url: string, key: string) {
 
 export interface LiveGame {
   state: GameState | null;
-  meta: Pick<GameSnapshot, "id" | "store" | "ai"> | null;
+  meta: Pick<GameSnapshot, "id" | "store" | "ai" | "voice"> | null;
   error: string | null;
   /** the room doesn't exist, or has been shut down */
   notFound: boolean;
@@ -78,7 +78,7 @@ export function useGame(code: string): LiveGame {
     fetchGame(code).then((snap) => {
       if (disposed) return;
       apply(snap.version, snap.state, snap.now);
-      setMeta({ id: snap.id, store: snap.store, ai: snap.ai });
+      setMeta({ id: snap.id, store: snap.store, ai: snap.ai, voice: snap.voice });
 
       if (snap.realtime.mode === "supabase") {
         const client = supabaseClient(snap.realtime.url, snap.realtime.key);
