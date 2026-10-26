@@ -8,7 +8,7 @@ It deploys for **free** in about two minutes, with **no AI costs**. When you wan
 
 **[Live demo](https://family-feud-self.vercel.app)** · **[Deploy free](#deploy-your-own-free)** · **[Level up with AI](#level-up-turn-on-the-ai-host)** · **[Make your own pack](docs/creating-a-pack.md)** · **[Security](SECURITY.md)**
 
-Built by **[@gocougs2020](https://github.com/gocougs2020)**.
+Built by **[Logan Dziuk](https://github.com/gocougs2020)**.
 
 > Fan-made party game. Not affiliated with or endorsed by Family Feud / Fremantle, J.K. Rowling, Warner Bros. or Wizarding World. The packs contain no official art, music or logos. All visuals and music are generated in code.
 
