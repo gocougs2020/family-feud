@@ -148,9 +148,13 @@ export interface HostLine {
   cue?: HostCue;
 }
 
+export type Difficulty = "easy" | "medium" | "hard";
+
 export interface GameSettings {
   rounds: number;
   answerSeconds: number;
+  /** how hard the questions are and how strictly answers are judged; rooms from before it existed play medium */
+  difficulty?: Difficulty;
 }
 
 export interface GameState {
@@ -190,7 +194,10 @@ export interface GameState {
 export interface SurveyAnswer {
   text: string;
   points: number;
+  /** other names for exactly this answer (spellings, full or short names): accepted at every difficulty */
   aliases: string[];
+  /** looser ways to get at it (descriptions, categories, "candy shop" for Honeydukes): accepted only on easy */
+  loose?: string[];
 }
 
 export interface SurveyRound {
@@ -204,6 +211,22 @@ export interface GameSecret {
   rounds: SurveyRound[];
   source: "ai" | "built-in";
   gameIntro?: string;
+}
+
+/**
+ * The host's reactions to one round's answers, written ahead (as secret as the
+ * survey, since they name the answers) so a found answer gets a line that's
+ * thought through and already voiced. Indexed like the round's answers.
+ */
+export interface LineBank {
+  /** the question these were written for, so a new game's survey never gets an old bank */
+  question: string;
+  hits: {
+    /** the first answer of the face-off */
+    faceoff?: string;
+    /** a team playing the board */
+    play?: string;
+  }[];
 }
 
 export interface StoredGame {

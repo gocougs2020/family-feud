@@ -27,11 +27,14 @@ export interface EngineCtx {
 export const TIMERS = {
   roundIntro: 9_000,
   /** face-off: type an answer, then buzz to lock it in */
-  buzz: 25_000,
+  buzz: 15_000,
   /** face-off: the second player's reply, once the buzzer's answer is in */
   faceoffReply: 15_000,
   playPass: 15_000,
-  steal: 40_000,
+  /** the other team confers and steals with one answer */
+  steal: 15_000,
+  /** a player's turn at the board while their team plays it */
+  answer: 15_000,
   roundEnd: 12_000,
   /** extra time granted while the guess is read out and judged */
   judging: 15_000,
@@ -40,8 +43,8 @@ export const TIMERS = {
   preparing: 60_000,
   /** allowance for fetching the host's voice before it starts speaking */
   voiceLead: 3_000,
-  /** how long the TV waits on a line the AI is still writing */
-  linePending: 5_000,
+  /** how long the TV waits on a line the AI is still writing (the AI gets 5s, plus time to save it) */
+  linePending: 6_500,
   /** extra time before a held turn opens on its own, if the TV never says the host is done */
   holdSlack: 2_000,
   /** the beat between the host finishing a round's intro and the face-off */
@@ -426,6 +429,9 @@ export function buzz(state: GameState, playerId: string, turnId: string, text: s
   return emit(next, ctx, { kind: "buzz", playerId, team, text: clean });
 }
 
+/** The end of every guess read-out: the same words every time, so its voice is made once and reused. */
+export const SURVEY_SAYS = "[dramatic pause] Survey says…";
+
 /**
  * Lock a guess in for judging and have the host read it out: "Harry says
  * robes. Survey says…". The reveal waits for the TV to finish saying it.
@@ -433,7 +439,7 @@ export function buzz(state: GameState, playerId: string, turnId: string, text: s
 function announceGuess(state: GameState, turn: Turn, playerId: string, text: string, ctx: EngineCtx): GameState {
   // Square brackets are delivery cues for the voice, so players can't type their own.
   const said = (s: string) => s.replace(/[[\]]/g, "");
-  const line = { id: ctx.id(), text: `${said(playerName(state, playerId))} says ${said(text)}. [dramatic pause] Survey says…` };
+  const line = { id: ctx.id(), text: `${said(playerName(state, playerId))} says ${said(text)}. ${SURVEY_SAYS}` };
   return { ...state, hostLine: line, turn: { ...turn, judging: { playerId, text, lineId: line.id } } };
 }
 

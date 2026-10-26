@@ -2,7 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { getPackTheme } from "@/packs";
 import { getPackContent } from "@/packs/server";
-import { aiEnabled, cueMoment, matchGuess, writeHostLine, writeRecap, writeSurvey } from "./ai";
+import { aiEnabled, cueMoment, matchGuess, writeHostLine, writeLineBank, writeRecap, writeSurvey } from "./ai";
 import { signSeat, type Seat } from "./auth";
 import {
   addPlayer,
@@ -26,6 +26,7 @@ import {
   setTeam,
   setTeamName,
   startGame,
+  SURVEY_SAYS,
   surveyReady,
   teamPlayers,
   tick,
@@ -34,10 +35,11 @@ import {
   type EngineCtx,
 } from "./engine";
 import { estimateSpeechMs, plainText } from "./captions";
+import { DEFAULT_DIFFICULTY, difficultyOf } from "./difficulty";
 import { localMatch } from "./match";
 import { getStore } from "./store";
-import type { GameSecret, GameState, StoredGame, TeamIndex, TeamPreset, Turn } from "./types";
-import { warmVoice } from "./voice";
+import type { Difficulty, GameSecret, GameState, LineBank, RoundState, StoredGame, SurveyRound, TeamIndex, TeamPreset, Turn } from "./types";
+import { warmVoice, warmVoices } from "./voice";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
@@ -103,15 +105,16 @@ function prepareLine(prev: GameState | null, next: GameState): GameState {
  * that starts with a new line waits for the host to finish it.
  */
 async function mutateGame(id: string, fn: (state: GameState, ctx: EngineCtx) => GameState | null) {
-  let before: string | undefined;
+  let prev: GameState | undefined;
   const result = await getStore().mutate(id, (s) => {
     if (s.phase === "closed") throw new GameError("This game has ended", 410);
-    before = s.hostLine?.id;
+    prev = s;
     const ctx = ctxFor(s);
     const next = fn(s, ctx);
     return next && holdNewTurn(s, prepareLine(s, next), ctx.now);
   });
-  afterLine(id, result.state, before);
+  afterLine(id, result.state, prev?.hostLine?.id);
+  afterRoundStart(id, prev, result.state);
   return result;
 }
 
@@ -174,9 +177,94 @@ async function finishLine(id: string, lineId: string) {
   await voiced;
 }
 
+// ------------------------------------------------------------ lines written ahead
+//
+// Some of what the host will say is known before it's needed: the survey's
+// intros and questions, the rules, "Survey says…", and (written per round, a
+// round ahead) a reaction to every answer on the board. All of it is written
+// and voiced in the background, so when the moment comes there's no wait.
+
+/** Voice the lines a new survey makes certain: the intros, rules, questions and "Survey says…". */
+async function warmSurveyLines(state: GameState, secret: GameSecret) {
+  const lines = getPackContent(state.packId, state.topic).lines;
+  await warmVoices(state.packId, [
+    secret.gameIntro ?? "",
+    ...(lines.rules ?? []),
+    SURVEY_SAYS,
+    ...secret.rounds.flatMap((r) => [r.intro ?? "", r.question]),
+  ].filter(Boolean));
+}
+
+/** Banks being written by this instance, so two triggers for one round share the work. */
+const writingBanks = new Map<string, Promise<LineBank | null>>();
+
+/** A round's bank: already written for this question, or written now. */
+async function bankFor(id: string, state: GameState, secret: GameSecret, index: number): Promise<LineBank | null> {
+  const survey = secret.rounds[index];
+  if (!survey) return null;
+  const store = getStore();
+  const existing = await store.getBank(id, index);
+  if (existing?.question === survey.question) return existing;
+  const key = `${id}\n${index}\n${survey.question}`;
+  let writing = writingBanks.get(key);
+  if (!writing) {
+    writing = writeLineBank({ pack: getPackContent(state.packId, state.topic), round: survey, roundNumber: index + 1, rounds: secret.rounds.length })
+      .then(async (bank) => {
+        await store.setBank(id, index, bank);
+        return bank;
+      })
+      .catch((err) => {
+        console.warn(`[feud] couldn't write round ${index + 1}'s lines ahead; the host will write them live:`, err);
+        return null;
+      })
+      .finally(() => writingBanks.delete(key));
+    writingBanks.set(key, writing);
+  }
+  return writing;
+}
+
+/**
+ * Write rounds' banks ahead of time, and voice `voiceRound`'s (face-off lines
+ * first, since they're needed first) while that round is still being played.
+ */
+async function prepareBanks(id: string, indexes: number[], voiceRound?: number) {
+  const store = getStore();
+  const [game, secret] = await Promise.all([store.getById(id), store.getSecret(id)]);
+  if (!game || !secret) return;
+  await Promise.all(
+    indexes.map(async (index) => {
+      const bank = await bankFor(id, game.state, secret, index);
+      if (!bank || index !== voiceRound) return;
+      const now = (await store.getById(id))?.state;
+      if (!now || now.roundIndex !== index || now.phase === "round_end" || now.phase === "game_over") return;
+      const lines = [...bank.hits.map((h) => h.faceoff), ...bank.hits.map((h) => h.play)];
+      await warmVoices(now.packId, lines.filter((l): l is string => !!l));
+    }),
+  );
+}
+
+/** A round has just begun: make sure its lines (and the next round's) are written, and voice its own. */
+function afterRoundStart(id: string, prev: GameState | undefined, next: GameState) {
+  if (!aiEnabled() || next.phase !== "round_intro" || !next.round) return;
+  if (prev?.phase === "round_intro" && prev.roundIndex === next.roundIndex) return;
+  const index = next.round.index;
+  after(() => prepareBanks(id, [index, index + 1], index).catch((err) => console.warn("[feud] writing lines ahead failed:", err)));
+}
+
+/** The pre-written reaction to a hit, if it fits the moment it was written for. */
+function bankedLine(bank: LineBank | null, survey: SurveyRound, round: RoundState, turn: Turn, index: number): string | undefined {
+  if (!bank || bank.question !== survey.question || round.board[index]?.revealed) return undefined;
+  const hit = bank.hits[index];
+  // The face-off's second answer is judged against the first, which the bank can't know.
+  if (turn.kind === "faceoff_answer") return round.faceoff.answered.length === 0 ? hit?.faceoff : undefined;
+  // Finding the last answer clears the board and ends the round, which needs its own line.
+  if (turn.kind === "answer") return round.board.filter((slot) => !slot.revealed).length > 1 ? hit?.play : undefined;
+  return undefined;
+}
+
 // ------------------------------------------------------------ create & join
 
-export async function createGame(input: { packId: string; topic?: string; rounds?: number }) {
+export async function createGame(input: { packId: string; topic?: string; rounds?: number; difficulty?: Difficulty }) {
   const store = getStore();
   const theme = getPackTheme(input.packId);
   const topic = theme.customTopic ? input.topic?.trim().slice(0, 60) || undefined : undefined;
@@ -189,7 +277,7 @@ export async function createGame(input: { packId: string; topic?: string; rounds
       code,
       packId: theme.id,
       topic,
-      settings: { rounds, answerSeconds: 30 },
+      settings: { rounds, answerSeconds: TIMERS.answer / 1000, difficulty: input.difficulty ?? DEFAULT_DIFFICULTY },
       teams: pickTeams(theme.id),
       ctx: { now: Date.now(), rng: Math.random, id: makeId, lines: getPackContent(theme.id, topic).lines },
     }));
@@ -243,6 +331,7 @@ export async function prepareSurvey(gameId: string, opts: { forceBuiltIn?: boole
       secret = await writeSurvey({
         pack: getPackContent(state.packId, state.topic),
         rounds: state.settings.rounds,
+        difficulty: difficultyOf(state.settings),
         teams: [state.teams[0].name, state.teams[1].name],
         avoid,
       });
@@ -257,6 +346,15 @@ export async function prepareSurvey(gameId: string, opts: { forceBuiltIn?: boole
   if (!latest || latest.state.prep === "ready") return;
   await store.setSecret(gameId, secret);
   await mutateGame(gameId, (s, ctx) => (s.prep === "ready" ? null : surveyReady(s, secret, ctx)));
+  // Players are still joining: get the first rounds' lines written and the sure things voiced,
+  // in the background (a tick can call this, and shouldn't wait on it).
+  if (aiEnabled()) {
+    after(() =>
+      Promise.all([prepareBanks(gameId, [0, 1]), warmSurveyLines(state, secret)]).catch((err) =>
+        console.warn("[feud] preparing lines ahead failed:", err),
+      ),
+    );
+  }
 }
 
 // ------------------------------------------------------------ actions
@@ -461,7 +559,10 @@ async function judgeAnswer(id: string, playerId: string, lock: (state: GameState
   const announcement = state.hostLine?.text ?? "";
   // The TV asks for this clip any moment now; get it started first.
   if (aiEnabled() && announcement) void warmVoice(state.packId, announcement);
-  const secret = await store.getSecret(id);
+  const [secret, bank] = await Promise.all([
+    store.getSecret(id),
+    state.round && aiEnabled() ? store.getBank(id, state.round.index).catch(() => null) : null,
+  ]);
   const turn = state.turn;
   const clean = turn?.judging?.text ?? "";
   if (!secret || !state.round || !turn) throw new GameError("The survey isn't ready yet", 409);
@@ -471,31 +572,36 @@ async function judgeAnswer(id: string, playerId: string, lock: (state: GameState
   const name = state.players.find((p) => p.id === playerId)?.name ?? "A player";
   const moment = describeStakes(state, turn, name);
 
-  let index = localMatch(clean, survey.answers);
+  const difficulty = difficultyOf(state.settings);
+  let index = localMatch(clean, survey.answers, difficulty);
   let quip: string | undefined;
   if (aiEnabled()) {
     if (index == null) {
       try {
-        index = await matchGuess({ round: survey, guess: clean });
+        index = await matchGuess({ round: survey, guess: clean, difficulty });
       } catch (err) {
         console.error("[feud] AI judge failed, treating as a miss:", err);
       }
     }
-    try {
-      const result =
-        index == null
-          ? `"${clean}" isn't on the board. Have fun with how wrong it is.`
-          : state.round.board[index].revealed
-            ? `"${clean}" is already on the board, so it counts as a miss. Rib them for not looking at the board.`
-            : `"${clean}" matches the number ${index + 1} answer, ${survey.answers[index].text}, worth ${survey.answers[index].points}.`;
-      quip = await writeHostLine({
-        pack,
-        moment: `${moment}\nYou've just said "${plainText(announcement)}" and the board is revealing the result. Result: ${result}\nReact to it and say what happens next. Don't repeat the guess announcement or say "survey says" again.`,
-        facts: describeGame(state),
-        recent: state.hostLog,
-      });
-    } catch (err) {
-      console.error("[feud] AI reaction failed:", err);
+    // A hit gets its line written ahead (already voiced) when there is one; anything else is written now.
+    quip = index == null ? undefined : bankedLine(bank, survey, state.round, turn, index);
+    if (!quip) {
+      try {
+        const result =
+          index == null
+            ? `"${clean}" isn't on the board. Have fun with how wrong it is.`
+            : state.round.board[index].revealed
+              ? `"${clean}" is already on the board, so it counts as a miss. Rib them for not looking at the board.`
+              : `"${clean}" matches the number ${index + 1} answer, ${survey.answers[index].text}, worth ${survey.answers[index].points}.`;
+        quip = await writeHostLine({
+          pack,
+          moment: `${moment}\nYou've just said "${plainText(announcement)}" and the board is revealing the result. Result: ${result}\nReact to it and say what happens next. Don't repeat the guess announcement or say "survey says" again.`,
+          facts: describeGame(state),
+          recent: state.hostLog,
+        });
+      } catch (err) {
+        console.error("[feud] AI reaction failed:", err);
+      }
     }
     // Start voicing the reaction now, so it's ready the moment it's revealed.
     if (quip) void warmVoice(state.packId, quip);

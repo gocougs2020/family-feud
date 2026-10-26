@@ -1,8 +1,19 @@
-import type { SurveyAnswer } from "./types";
+import { acceptedNames, DEFAULT_DIFFICULTY } from "./difficulty";
+import type { Difficulty, SurveyAnswer } from "./types";
 
 // Fast, local answer matching. Catches exact answers, aliases, plurals,
-// partial names ("Hermione" → "Hermione Granger") and small typos. Anything it
-// can't decide confidently goes to the AI judge.
+// partial names ("Hermione" → "Hermione Granger") and small typos, as far as
+// the difficulty allows. Anything it can't decide confidently goes to the AI
+// judge, which applies the same difficulty.
+
+/** How forgiving the matcher is at each difficulty. */
+const RULES: Record<Difficulty, { partialNames: boolean; extraWords: number; lettersPerTypo: number }> = {
+  // "hermione" for "hermione granger", "a big snake" for "snake", a typo every 6 letters
+  easy: { partialNames: true, extraWords: 2, lettersPerTypo: 6 },
+  medium: { partialNames: true, extraWords: 1, lettersPerTypo: 6 },
+  // the answer itself, give or take a slip of the keyboard in a longer word
+  hard: { partialNames: false, extraWords: 0, lettersPerTypo: 8 },
+};
 
 const STOP = new Set(["the", "a", "an", "of", "to", "my", "his", "her", "their", "your", "some", "and", "&"]);
 
@@ -42,7 +53,7 @@ export function levenshtein(a: string, b: string): number {
 }
 
 /** Score how well a guess matches one candidate string (0 = no match, 1 = exact). */
-function scoreCandidate(guess: string, candidate: string): number {
+function scoreCandidate(guess: string, candidate: string, rules: (typeof RULES)[Difficulty]): number {
   if (!guess || !candidate) return 0;
   if (guess === candidate) return 1;
 
@@ -51,27 +62,28 @@ function scoreCandidate(guess: string, candidate: string): number {
 
   // "hermione" vs "hermione granger": every guess word appears in the answer,
   // covering at least half of it (so "wand" doesn't match "wand lighting charm").
-  if (g.length * 2 >= c.length && g.every((w) => w.length >= 3 && c.includes(w))) return 0.85;
+  if (rules.partialNames && g.length * 2 >= c.length && g.every((w) => w.length >= 3 && c.includes(w))) return 0.85;
   // "a big snake" vs "snake": the whole answer appears in a short guess.
-  if (c.every((w) => g.includes(w)) && g.length <= c.length + 2) return 0.8;
+  if (c.every((w) => g.includes(w)) && g.length <= c.length + rules.extraWords) return 0.8;
 
-  // One typo per 6 letters: "basilsk" → "basilisk", but not "snakes" → "snape".
-  const allowed = Math.floor(Math.max(guess.length, candidate.length) / 6);
+  // One typo per few letters: "basilsk" → "basilisk", but not "snakes" → "snape".
+  const allowed = Math.floor(Math.max(guess.length, candidate.length) / rules.lettersPerTypo);
   if (allowed > 0 && levenshtein(guess, candidate) <= allowed) return 0.75;
   return 0;
 }
 
 /**
  * Returns the index of the best matching answer, or null if nothing matched
- * confidently.
+ * confidently at this difficulty.
  */
-export function localMatch(guess: string, answers: SurveyAnswer[]): number | null {
+export function localMatch(guess: string, answers: SurveyAnswer[], difficulty: Difficulty = DEFAULT_DIFFICULTY): number | null {
   const g = normalize(guess);
   if (!g) return null;
+  const rules = RULES[difficulty];
   let best: { index: number; score: number } | null = null;
   answers.forEach((answer, index) => {
-    for (const candidate of [answer.text, ...answer.aliases]) {
-      const score = scoreCandidate(g, normalize(candidate));
+    for (const candidate of acceptedNames(answer, difficulty)) {
+      const score = scoreCandidate(g, normalize(candidate), rules);
       if (score > 0 && (!best || score > best.score)) best = { index, score };
     }
   });

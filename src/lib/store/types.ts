@@ -1,4 +1,4 @@
-import type { GameSecret, GameState, StoredGame } from "../types";
+import type { GameSecret, GameState, LineBank, StoredGame } from "../types";
 
 export type Mutator = (state: GameState) => GameState | null | Promise<GameState | null>;
 
@@ -15,4 +15,7 @@ export interface GameStore {
   mutate(id: string, fn: Mutator): Promise<StoredGame>;
   getSecret(id: string): Promise<GameSecret | null>;
   setSecret(id: string, secret: GameSecret): Promise<void>;
+  /** The host's lines written ahead for one round (see `LineBank`). */
+  getBank(id: string, roundIndex: number): Promise<LineBank | null>;
+  setBank(id: string, roundIndex: number, bank: LineBank): Promise<void>;
 }

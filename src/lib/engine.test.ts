@@ -281,4 +281,30 @@ describe("localMatch", () => {
     expect(localMatch("wand", [{ text: "Lumos", points: 22, aliases: ["wand lighting charm"] }])).toBeNull();
     expect(localMatch("", answers)).toBeNull();
   });
+
+  describe("by difficulty", () => {
+    const shops = [
+      { text: "Honeydukes", points: 40, aliases: ["honey dukes"], loose: ["candy shop", "sweet shop"] },
+      { text: "Hermione Granger", points: 20, aliases: ["hermione"] },
+      { text: "Neville Longbottom", points: 10, aliases: [] },
+      { text: "Troll", points: 5, aliases: [] },
+    ];
+    it("counts loose phrasings only on easy", () => {
+      expect(localMatch("candy shop", shops, "easy")).toBe(0);
+      expect(localMatch("candy shop", shops, "medium")).toBeNull();
+      expect(localMatch("candy shop", shops, "hard")).toBeNull();
+      expect(localMatch("Honey Dukes", shops, "hard")).toBe(0);
+    });
+    it("gets stricter about partial names and extra words", () => {
+      expect(localMatch("neville", shops, "medium")).toBe(2);
+      expect(localMatch("neville", shops, "hard")).toBeNull();
+      expect(localMatch("a really big troll", shops, "easy")).toBe(3);
+      expect(localMatch("a really big troll", shops, "medium")).toBeNull();
+      expect(localMatch("big troll", shops, "hard")).toBeNull();
+    });
+    it("forgives a typo in a longer word, even on hard", () => {
+      expect(localMatch("Hermoine Granger", shops, "hard")).toBe(1);
+      expect(localMatch("trol", shops, "hard")).toBeNull();
+    });
+  });
 });

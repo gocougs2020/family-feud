@@ -1,13 +1,14 @@
 "use client";
 
-import { estimateSpeechMs, plainText } from "@/lib/captions";
+import { estimateSpeechMs, partShares, plainText, VOICE_SPEED, voiceParts } from "@/lib/captions";
 import type { PackTheme } from "@/packs/types";
 
 // The host's voice. When AI is on, the TV fetches each line from the AI
-// Gateway (fish-audio/drama-3) via /api/games/[code]/voice; otherwise, or if
-// that's slow or fails, it uses the browser's built-in speech synthesis.
-// Either way it reports how far through the line it is, so the TV can show
-// captions in step with the voice.
+// Gateway (fish-audio/drama-3) via /api/games/[code]/voice, a sentence at a
+// time: every sentence is asked for at once, the first plays the moment it
+// arrives, and the rest follow on. Otherwise, or if that's slow or fails, it
+// uses the browser's built-in speech synthesis. Either way it reports how far
+// through the line it is, so the TV can show captions in step with the voice.
 
 type Voice = PackTheme["voice"];
 type Line = { id: string; text: string };
@@ -19,15 +20,21 @@ interface Hooks {
   /** `line` has been said in full (not called for a line cut short by the next one) */
   onDone?: (line: Line) => void;
 }
+/** A voiced sentence, and the rate the server says to play it at. */
+type Clip = { blob: Blob; rate: number };
 
-/** Played a touch faster than the model's natural pace, to keep the show moving. */
-const SPEED = 1.12;
 /**
  * A line this close to finishing gets to finish before the next one starts;
  * a longer one fades out rather than stopping dead.
  */
 const WAIT_MS = 4000;
 const FADE_MS = 350;
+/** how long to wait for a sentence's voice before giving up on it */
+const CLIP_TIMEOUT_MS = 9000;
+/** recent sentences kept by their text, so one that comes up again ("Survey says…") plays at once */
+const MAX_CLIPS = 24;
+
+class StaleLine extends Error {}
 
 function chooseVoice(cfg: Voice): SpeechSynthesisVoice | null {
   const voices = window.speechSynthesis?.getVoices() ?? [];
@@ -45,10 +52,19 @@ export class HostVoice {
   private ticker: ReturnType<typeof setInterval> | null = null;
   /** when the browser voice should finish the current line (estimated) */
   private speechEndsAt = 0;
+  /** roughly how long the current line's sentences after the one playing will take */
+  private restMs = 0;
   /** bumped by every new line, so stale async work can tell it lost */
   private generation = 0;
+  /** bumped whenever playback stops or starts fading, so a line's later sentences don't play after it */
+  private playback = 0;
+  /** ends the wait on the sentence playing now, when playback is stopped */
+  private settle: (() => void) | null = null;
+  /** true while a line's sentences are being played */
+  private playing = false;
   /** AI voice failures in a row; after a few we stop retrying every line */
   private aiFailures = 0;
+  private clips = new Map<string, Clip>();
 
   constructor(private code: string) {}
 
@@ -58,32 +74,26 @@ export class HostVoice {
     this.request?.abort();
     this.request = null;
 
-    if (!opts.silent && opts.ai && opts.token && this.aiFailures < 3) {
+    const parts = voiceParts(line.text);
+    if (!opts.silent && opts.ai && opts.token && this.aiFailures < 3 && parts.length) {
       const controller = new AbortController();
       this.request = controller;
-      const timeout = setTimeout(() => controller.abort(), 9_000);
+      const clips = parts.map((part, i) => this.clip(line.id, i, part, opts.token!, controller.signal));
+      // A later sentence that fails is handled when its turn comes.
+      clips.forEach((clip) => clip.catch(() => {}));
       try {
-        const res = await fetch(`/api/games/${this.code}/voice`, {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${opts.token}` },
-          body: JSON.stringify({ lineId: line.id }),
-          signal: controller.signal,
-        });
-        if (res.status === 409 || gen !== this.generation) return; // a newer line took over
-        if (!res.ok) throw new Error(`voice ${res.status}`);
-        const blob = await res.blob();
+        await clips[0];
+        if (gen !== this.generation) return;
         this.aiFailures = 0;
         await this.handOff();
         if (gen !== this.generation) return;
         this.stopPlayback();
-        this.playClip(line, URL.createObjectURL(blob), opts);
+        void this.playParts(line, parts, clips, cfg, opts);
         return;
       } catch (err) {
-        if (gen !== this.generation) return;
+        if (err instanceof StaleLine || gen !== this.generation) return; // a newer line took over
         this.aiFailures++;
         console.warn("[feud] AI voice unavailable, using browser speech", err);
-      } finally {
-        clearTimeout(timeout);
       }
     }
 
@@ -91,7 +101,7 @@ export class HostVoice {
     if (gen !== this.generation) return;
     this.stopPlayback();
     const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
-    if (opts.silent || !synth || !line.text) this.runClock(line, estimateSpeechMs(line.text, SPEED), opts);
+    if (opts.silent || !synth || !line.text) this.runClock(line, estimateSpeechMs(line.text, VOICE_SPEED), opts);
     else this.browserSpeak(synth, line, cfg, opts);
   }
 
@@ -102,42 +112,128 @@ export class HostVoice {
     this.stopPlayback();
   }
 
-  private playClip(line: Line, url: string, hooks: Hooks) {
-    this.url = url;
-    const audio = new Audio(url);
-    audio.playbackRate = SPEED;
-    audio.preservesPitch = true;
-    this.audio = audio;
-    const estimate = estimateSpeechMs(line.text, SPEED) / 1000;
-    audio.onplay = () => {
-      hooks.onStart?.();
-      this.tick(() => {
-        const length = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : estimate * SPEED;
-        hooks.onProgress?.(line, audio.currentTime / length);
+  /** One sentence's voice: from the recent-sentence cache, or fetched for this line. */
+  private async clip(lineId: string, part: number, text: string, token: string, signal: AbortSignal): Promise<Clip> {
+    const cached = this.clips.get(text);
+    if (cached) {
+      this.clips.delete(text);
+      this.clips.set(text, cached);
+      return cached;
+    }
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener("abort", abort);
+    const timeout = setTimeout(abort, CLIP_TIMEOUT_MS);
+    try {
+      const res = await fetch(`/api/games/${this.code}/voice`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ lineId, part }),
+        signal: controller.signal,
       });
-    };
-    audio.onended = audio.onerror = () => {
+      if (res.status === 409) throw new StaleLine("line has passed");
+      if (!res.ok) throw new Error(`voice ${res.status}`);
+      const rate = Number(res.headers.get("x-voice-rate"));
+      const clip = { blob: await res.blob(), rate: rate > 0 ? rate : VOICE_SPEED };
+      this.clips.set(text, clip);
+      if (this.clips.size > MAX_CLIPS) this.clips.delete(this.clips.keys().next().value!);
+      return clip;
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+    }
+  }
+
+  /** Play a line's sentences in turn, each as soon as it's ready; finish in the browser's voice if one fails. */
+  private async playParts(line: Line, parts: string[], clips: Promise<Clip>[], cfg: Voice, hooks: Hooks) {
+    const pb = ++this.playback;
+    const shares = partShares(parts);
+    this.playing = true;
+    hooks.onProgress?.(line, 0);
+    try {
+      for (let i = 0; i < parts.length; i++) {
+        const clip = await clips[i].catch(() => null);
+        if (pb !== this.playback) return;
+        this.restMs = estimateSpeechMs(parts.slice(i + 1).join(" "), VOICE_SPEED);
+        const { start, share } = shares[i];
+        if (!clip) {
+          const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+          const rest = { start, share: 1 - start };
+          if (synth) this.browserSpeak(synth, line, cfg, hooks, plainText(parts.slice(i).join(" ")), rest);
+          else this.runClock(line, estimateSpeechMs(parts.slice(i).join(" "), VOICE_SPEED), hooks, rest);
+          return;
+        }
+        await this.playClip(clip, parts[i], i === 0 ? hooks.onStart : undefined, (f) => hooks.onProgress?.(line, start + f * share));
+        if (pb !== this.playback) return;
+      }
       this.clearTicker();
       hooks.onProgress?.(line, 1);
       hooks.onEnd?.();
       hooks.onDone?.(line);
-    };
-    hooks.onProgress?.(line, 0);
-    audio.play().catch(() => this.runClock(line, estimate * 1000, hooks));
+    } finally {
+      if (pb === this.playback) this.playing = false;
+    }
   }
 
-  private browserSpeak(synth: SpeechSynthesis, line: Line, cfg: Voice, hooks: Hooks) {
-    const said = plainText(line.text);
+  /** Play one sentence; resolves when it ends, fails, or playback is stopped. */
+  private playClip(clip: Clip, text: string, onStart: (() => void) | undefined, onFraction: (f: number) => void): Promise<void> {
+    if (this.url) URL.revokeObjectURL(this.url);
+    const url = URL.createObjectURL(clip.blob);
+    this.url = url;
+    const audio = new Audio(url);
+    audio.playbackRate = clip.rate;
+    audio.preservesPitch = true;
+    this.audio = audio;
+    const estimate = estimateSpeechMs(text, VOICE_SPEED) / 1000;
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        this.settle = null;
+        this.clearTicker();
+        onFraction(1);
+        resolve();
+      };
+      this.settle = resolve;
+      audio.onplay = () => {
+        onStart?.();
+        this.tick(() => {
+          const length = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : estimate * clip.rate;
+          onFraction(audio.currentTime / length);
+        });
+      };
+      audio.onended = audio.onerror = done;
+      onFraction(0);
+      audio.play().catch(() => {
+        // Autoplay blocked: keep the captions (and the game) moving on an estimate.
+        onStart?.();
+        const startedAt = Date.now();
+        this.tick(() => {
+          const f = (Date.now() - startedAt) / (estimate * 1000);
+          if (f >= 1) done();
+          else onFraction(f);
+        });
+      });
+    });
+  }
+
+  private browserSpeak(
+    synth: SpeechSynthesis,
+    line: Line,
+    cfg: Voice,
+    hooks: Hooks,
+    said = plainText(line.text),
+    span = { start: 0, share: 1 },
+  ) {
     const utterance = new SpeechSynthesisUtterance(said);
     const voice = chooseVoice(cfg);
     if (voice) utterance.voice = voice;
     utterance.lang = voice?.lang ?? cfg.lang;
-    utterance.rate = cfg.rate * SPEED;
+    utterance.rate = cfg.rate * VOICE_SPEED;
     utterance.pitch = cfg.pitch;
+    const progress = (f: number) => hooks.onProgress?.(line, span.start + Math.min(1, f) * span.share);
     // Word boundaries give exact progress where the browser reports them;
     // otherwise (e.g. some network voices) fall back to an estimated clock.
     let spokenTo = -1;
-    const estimate = estimateSpeechMs(line.text, utterance.rate);
+    const estimate = estimateSpeechMs(said, utterance.rate);
     // A cancelled utterance still fires its events, after the next line has begun.
     const gen = this.generation;
     const current = () => gen === this.generation;
@@ -145,16 +241,14 @@ export class HostVoice {
       spokenTo = e.charIndex;
     };
     // Some browsers occasionally never start speaking; keep the captions moving anyway.
-    const watchdog = setTimeout(() => current() && this.runClock(line, estimate, hooks), 2500);
+    const watchdog = setTimeout(() => current() && this.runClock(line, estimate, hooks, span), 2500);
     utterance.onstart = () => {
       clearTimeout(watchdog);
       if (!current()) return;
       hooks.onStart?.();
       const startedAt = Date.now();
       this.speechEndsAt = startedAt + estimate;
-      this.tick(() =>
-        hooks.onProgress?.(line, spokenTo >= 0 ? spokenTo / said.length : (Date.now() - startedAt) / estimate),
-      );
+      this.tick(() => progress(spokenTo >= 0 ? spokenTo / said.length : (Date.now() - startedAt) / estimate));
     };
     utterance.onend = () => {
       clearTimeout(watchdog);
@@ -168,20 +262,20 @@ export class HostVoice {
       clearTimeout(watchdog);
       if (!current()) return;
       hooks.onEnd?.();
-      this.runClock(line, estimate, hooks);
+      this.runClock(line, estimate, hooks, span);
     };
-    hooks.onProgress?.(line, 0);
+    progress(0);
     synth.cancel();
     synth.speak(utterance);
   }
 
   /** Captions without a voice: advance on an estimated speaking pace. */
-  private runClock(line: Line, ms: number, hooks: Hooks) {
+  private runClock(line: Line, ms: number, hooks: Hooks, span = { start: 0, share: 1 }) {
     const startedAt = Date.now();
-    hooks.onProgress?.(line, 0);
+    hooks.onProgress?.(line, span.start);
     this.tick(() => {
       const fraction = (Date.now() - startedAt) / ms;
-      hooks.onProgress?.(line, fraction);
+      hooks.onProgress?.(line, span.start + Math.min(1, fraction) * span.share);
       if (fraction >= 1) {
         this.clearTicker();
         hooks.onDone?.(line);
@@ -195,11 +289,13 @@ export class HostVoice {
    */
   private async handOff(): Promise<void> {
     const audio = this.audio;
-    if (audio && !audio.paused && !audio.ended) {
-      const left = Number.isFinite(audio.duration)
-        ? ((audio.duration - audio.currentTime) / audio.playbackRate) * 1000
-        : Infinity;
-      if (left <= WAIT_MS) return until(() => audio.ended || audio.paused, left + 250);
+    if (this.playing && audio && !audio.paused && !audio.ended) {
+      const left =
+        (Number.isFinite(audio.duration) ? ((audio.duration - audio.currentTime) / audio.playbackRate) * 1000 : Infinity) +
+        this.restMs;
+      if (left <= WAIT_MS) return until(() => !this.playing, left + 1000);
+      // Fade the sentence that's playing, and don't start the line's next one.
+      this.playback++;
       const from = audio.volume;
       const started = Date.now();
       return until(() => {
@@ -223,7 +319,11 @@ export class HostVoice {
   }
 
   private stopPlayback() {
+    this.playback++;
+    this.playing = false;
     this.clearTicker();
+    this.settle?.();
+    this.settle = null;
     if (this.audio) {
       this.audio.onended = this.audio.onerror = null;
       this.audio.pause();

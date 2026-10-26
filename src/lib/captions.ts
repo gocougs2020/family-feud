@@ -65,6 +65,46 @@ export function withCue(text: string, cue: string): string {
     .join(" ");
 }
 
+/** The host talks a touch faster than the voice model's natural pace, to keep the show moving. */
+export const VOICE_SPEED = 1.12;
+
+/** Voiced bits shorter than this ("Oh!", "Fine.") are too short to say well alone. */
+const VOICE_MIN_CHARS = 8;
+
+/**
+ * A line as it's voiced: a sentence at a time, so the first clip comes back
+ * fast and plays while the rest are made. Tiny bits ("Oh!") join the next
+ * sentence. A sentence that's the same every time ("Survey says…", the rules)
+ * is its own piece, so its clip can be reused.
+ */
+export function voiceParts(text: string): string[] {
+  const out: string[] = [];
+  let carry = "";
+  for (const s of sentences(text.replace(/\s+/g, " ").trim())) {
+    const piece = carry ? `${carry} ${s}` : s;
+    carry = "";
+    if (plainText(piece).length < VOICE_MIN_CHARS) carry = piece;
+    else out.push(piece);
+  }
+  if (carry) {
+    if (out.length) out[out.length - 1] += ` ${carry}`;
+    else out.push(carry);
+  }
+  return out;
+}
+
+/** How much of a line comes before each voiced piece, and each piece's share (fractions of the whole). */
+export function partShares(parts: string[]): { start: number; share: number }[] {
+  const weights = parts.map((p) => weight(plainText(p)));
+  const total = weights.reduce((sum, w) => sum + w, 0) || 1;
+  let start = 0;
+  return weights.map((w) => {
+    const entry = { start, share: w / total };
+    start += w / total;
+    return entry;
+  });
+}
+
 export function splitCaptions(text: string): string[] {
   const pieces = sentences(plainText(text)).flatMap(breakLong);
   const out: string[] = [];
