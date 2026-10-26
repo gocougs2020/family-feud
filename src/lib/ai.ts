@@ -45,6 +45,11 @@ export function aiEnabled(): boolean {
   return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
 }
 
+/** Whether the host is voiced by the gateway's speech model; off, the TV uses the browser's free voice. */
+export function aiVoiceEnabled(): boolean {
+  return aiEnabled() && process.env.AI_VOICE_DISABLED !== "1";
+}
+
 function shuffle<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i--) {

@@ -46,7 +46,7 @@ export function HostScreen({ code }: { code: string }) {
   const shaker = useRef<HTMLDivElement>(null);
   const audio = useRef<FeudAudio | null>(null);
   const voice = useRef<HostVoice | null>(null);
-  const aiOn = !!live.meta?.ai;
+  const aiVoiceOn = !!live.meta?.voice;
   // The line the host is speaking (which can trail the newest line for a beat) and how far through it.
   const [caption, setCaption] = useState<Caption | null>(null);
 
@@ -77,7 +77,7 @@ export function HostScreen({ code }: { code: string }) {
     (line: { id: string; text: string }, silent = false) => {
       voice.current ??= new HostVoice(code);
       void voice.current.say(line, theme.voice, {
-        ai: aiOn,
+        ai: aiVoiceOn,
         token: hostToken,
         silent,
         onStart: () => audio.current?.duck(true),
@@ -95,7 +95,7 @@ export function HostScreen({ code }: { code: string }) {
           }),
       });
     },
-    [code, hostToken, theme.voice, aiOn, act],
+    [code, hostToken, theme.voice, aiVoiceOn, act],
   );
 
   const updatePrefs = (patch: Partial<Prefs>) => setRawPrefs(JSON.stringify({ ...prefs, ...patch }));

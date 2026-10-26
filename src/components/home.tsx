@@ -95,7 +95,7 @@ export function Home({ status }: { status: { realtime: "supabase" | "local"; ai:
                   placeholder="e.g. The Office, 90s cartoons, our company offsite"
                   className="rounded-xl border-2 border-white/15 bg-black/40 px-4 py-3 outline-none focus:border-accent"
                 />
-                {!status.ai && <span className="text-xs text-strike">AI is off, so custom topics fall back to classic questions. Add AI_GATEWAY_API_KEY to enable.</span>}
+                {!status.ai && <span className="text-xs text-strike">AI is off, so custom topics fall back to classic questions. Turn on the AI host to play any topic (see the README).</span>}
               </label>
             )}
             <div className="flex flex-wrap items-center gap-4">

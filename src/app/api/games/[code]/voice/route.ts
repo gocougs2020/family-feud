@@ -1,4 +1,4 @@
-import { aiEnabled } from "@/lib/ai";
+import { aiVoiceEnabled } from "@/lib/ai";
 import { seatFromRequest } from "@/lib/auth";
 import { voiceParts } from "@/lib/captions";
 import { GameError } from "@/lib/engine";
@@ -14,7 +14,7 @@ export const maxDuration = 30;
 
 export async function POST(req: Request, ctx: { params: Promise<{ code: string }> }) {
   try {
-    if (!aiEnabled()) throw new GameError("AI voice is off", 404);
+    if (!aiVoiceEnabled()) throw new GameError("AI voice is off", 404);
     const { code } = await ctx.params;
     const { lineId, part = 0 } = await readJson<{ lineId?: string; part?: number }>(req);
     const game = await loadGame(code);

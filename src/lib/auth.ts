@@ -1,5 +1,5 @@
 import "server-only";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 // Stateless, signed seat tokens. The TV gets a host token when it creates a
 // game; each phone gets a player token when it joins. They're kept in
@@ -17,7 +17,12 @@ function secret(): string {
   if (process.env.NODE_ENV === "production" && process.env.VERCEL) {
     throw new Error("Set SESSION_SECRET (any long random string) in your environment.");
   }
-  return "local-dev-only-secret";
+  // No secret configured (local play, in-memory games): sign with a random key
+  // made once per server process, never a constant someone could read in this
+  // repo and forge tokens with. Kept on globalThis so dev hot reloads keep it,
+  // like the in-memory games it signs seats for.
+  const g = globalThis as typeof globalThis & { __feudSeatSecret?: string };
+  return (g.__feudSeatSecret ??= randomBytes(32).toString("base64url"));
 }
 
 const b64 = (buf: Buffer | string) => Buffer.from(buf).toString("base64url");

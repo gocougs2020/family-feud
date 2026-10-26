@@ -1,6 +1,6 @@
 import "server-only";
 import { getPackTheme } from "@/packs";
-import { speakHostLine } from "./ai";
+import { aiVoiceEnabled, speakHostLine } from "./ai";
 import { voiceParts } from "./captions";
 
 // Voiced host lines, shared by the voice route and the code that writes the
@@ -33,6 +33,7 @@ export function voiceClip(packId: string, part: string): Promise<Clip> {
 
 /** Start voicing a line ahead of time, every sentence at once; failures surface when the TV asks. */
 export async function warmVoice(packId: string, text: string) {
+  if (!aiVoiceEnabled()) return;
   await Promise.all(voiceParts(text).map((part) => voiceClip(packId, part).catch(() => {})));
 }
 
@@ -41,6 +42,7 @@ export async function warmVoice(packId: string, text: string) {
  * doesn't crowd out the line being said now. Sentences already voiced are skipped.
  */
 export async function warmVoices(packId: string, texts: string[], concurrency = 3) {
+  if (!aiVoiceEnabled()) return;
   const queue = [...new Set(texts.flatMap((t) => voiceParts(t)))].filter((part) => !clips.has(`${packId}\n${part}`));
   const worker = async () => {
     for (let part = queue.shift(); part != null; part = queue.shift()) await voiceClip(packId, part).catch(() => {});
