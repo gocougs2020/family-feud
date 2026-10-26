@@ -4,6 +4,8 @@ import { motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createGame, seats } from "@/lib/client/api";
+import { DEFAULT_DIFFICULTY, DIFFICULTIES } from "@/lib/difficulty";
+import type { Difficulty } from "@/lib/types";
 import { DEFAULT_PACK_ID, packThemes } from "@/packs";
 
 export function Home({ status }: { status: { realtime: "supabase" | "local"; ai: boolean; deployed: boolean } }) {
@@ -11,6 +13,7 @@ export function Home({ status }: { status: { realtime: "supabase" | "local"; ai:
   const [packId, setPackId] = useState(DEFAULT_PACK_ID);
   const [topic, setTopic] = useState("");
   const [rounds, setRounds] = useState(4);
+  const [difficulty, setDifficulty] = useState<Difficulty>(DEFAULT_DIFFICULTY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -20,7 +23,7 @@ export function Home({ status }: { status: { realtime: "supabase" | "local"; ai:
     setBusy(true);
     setError(null);
     try {
-      const game = await createGame({ packId, topic: pack.customTopic ? topic : undefined, rounds });
+      const game = await createGame({ packId, topic: pack.customTopic ? topic : undefined, rounds, difficulty });
       seats.set(game.code, "host", game.hostToken);
       router.push(`/host/${game.code}`);
     } catch (err) {
@@ -105,6 +108,20 @@ export function Home({ status }: { status: { realtime: "supabase" | "local"; ai:
                     className={`size-9 rounded-lg font-bold ${rounds === n ? "bg-accent text-black" : "bg-white/10"}`}
                   >
                     {n}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-semibold">Difficulty</span>
+                {(Object.keys(DIFFICULTIES) as Difficulty[]).map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setDifficulty(d)}
+                    title={DIFFICULTIES[d].blurb}
+                    aria-pressed={difficulty === d}
+                    className={`h-9 rounded-lg px-3 font-bold ${difficulty === d ? "bg-accent text-black" : "bg-white/10"}`}
+                  >
+                    {DIFFICULTIES[d].label}
                   </button>
                 ))}
               </div>

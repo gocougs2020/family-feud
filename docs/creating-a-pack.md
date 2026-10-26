@@ -58,8 +58,10 @@ export const spaceContent: PackContent = {
     {
       question: "Name something an astronaut would miss from Earth.",
       answers: [
-        { text: "Family", points: 34, aliases: ["kids", "loved ones"] },
-        { text: "Fresh Food", points: 22, aliases: ["pizza", "real food"] },
+        // aliases: other names for exactly this answer (count at every difficulty)
+        // loose: descriptions and related things (count only on easy)
+        { text: "Family", points: 34, aliases: ["my family", "loved ones"], loose: ["kids", "mom"] },
+        { text: "Fresh Food", points: 22, aliases: ["real food"], loose: ["pizza", "salad"] },
         // 4-8 answers, most popular first, points ≤ 100 in total
       ],
     },

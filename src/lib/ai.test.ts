@@ -25,7 +25,7 @@ function mockModel(json: unknown, prompts: string[] = [], reasoning: unknown[] =
 }
 
 const answers = (n: number) =>
-  Array.from({ length: n }, (_, i) => ({ text: `Answer ${i}`, points: 30 - i * 5, aliases: [`alias ${i}`] }));
+  Array.from({ length: n }, (_, i) => ({ text: `Answer ${i}`, points: 30 - i * 5, aliases: [`alias ${i}`], loose: [`loose ${i}`] }));
 
 describe("writeSurvey", () => {
   it("parses, sorts and trims the model's survey", async () => {
@@ -52,6 +52,16 @@ describe("writeSurvey", () => {
     expect(secret.gameIntro).toBe("Welcome!");
     expect(secret.rounds).toHaveLength(2);
     expect(secret.rounds[0].answers[0].points).toBe(30);
+    expect(secret.rounds[0].answers[0].loose).toEqual(["loose 0"]);
+  });
+
+  it("asks for questions at the game's difficulty", async () => {
+    const prompts: string[] = [];
+    const survey = { gameIntro: "Hi", rounds: [{ question: "Q1?", intro: "One", answers: answers(5) }] };
+    await writeSurvey({ pack: harryPotterContent, rounds: 1, teams: ["A", "B"], difficulty: "hard", model: mockModel(survey, prompts) });
+    await writeSurvey({ pack: harryPotterContent, rounds: 1, teams: ["A", "B"], difficulty: "easy", model: mockModel(survey, prompts) });
+    expect(prompts[0]).toContain("Difficulty: HARD");
+    expect(prompts[1]).toContain("Difficulty: EASY");
   });
 
   it("rejects surveys with too few usable questions", async () => {
@@ -112,6 +122,18 @@ describe("matchGuess", () => {
     expect(question.type === "choice" && Object.keys(question.criteria)).toEqual(["none", ...round.answers.map((_, i) => `a${i}`)]);
     expect(JSON.stringify(calls[0].state)).toContain("the big snake");
   });
+  it("judges as strictly as the difficulty says, and counts loose phrasings only on easy", async () => {
+    const shops = { question: "Name a shop in Hogsmeade.", answers: [{ text: "Honeydukes", points: 40, aliases: ["honey dukes"], loose: ["candy shop"] }] };
+    const calls: DecideCall[] = [];
+    for (const difficulty of ["easy", "medium", "hard"] as const) await matchGuess({ round: shops, guess: "sweets", difficulty, model: mockDecider("none", calls) });
+    const [easy, medium, hard] = calls.map((c) => c.questions.match);
+    expect(easy.type === "choice" && easy.criteria.a0).toBe("Honeydukes (also: honey dukes, candy shop)");
+    expect(medium.type === "choice" && medium.criteria.a0).toBe("Honeydukes (also: honey dukes)");
+    expect(easy.instructions).toContain("generous");
+    expect(medium.instructions).toContain('"candy shop" is not "Honeydukes"');
+    expect(hard.instructions).toContain("strict");
+  });
+
   it("treats none as no match, and rejects options that aren't on the board", async () => {
     expect(await matchGuess({ round, guess: "toaster", model: mockDecider("none") })).toBeNull();
     await expect(matchGuess({ round, guess: "toaster", model: mockDecider("a42") })).rejects.toThrow();

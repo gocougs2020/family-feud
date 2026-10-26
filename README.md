@@ -14,9 +14,15 @@ Built on Next.js, the Vercel AI SDK and AI Gateway, and Supabase. It ships with 
 
 - **TV screen** (`/host/ABCD`): a broadcast-style stage with a React Three Fiber backdrop (floating candles, an enchanted starry ceiling and a castle silhouette for the wizard pack; sweeping studio lights and a marquee for the classic pack). On top of that sit a flipping 3D answer board, strike X's, a score podium, a "Survey says…" beat, slow camera drift, and a lower-third chyron that captions the host a sentence at a time, in step with the voice. Without WebGL it falls back to an animated CSS stage.
 - **Phone controller** (`/play/ABCD`): join with a name, switch teams, type-then-buzz face-offs (you type your answer and the big BUZZ button locks it in, so the race is to think of an answer), an answer box when it's your turn, play/pass, team steals, and haptic buzzes on your turn.
+- **Three difficulties**, picked when you create a game:
+  - **Easy**: the most famous, everyday questions, and generous judging (a description like "candy shop" counts for Honeydukes)
+  - **Medium**: trickier questions, and answers must be specific: the answer itself, another name for exactly that thing, or a misspelling
+  - **Hard**: deeper-cut questions and strict judging: the answer or one of its listed names, give or take a typo
+
+  Every answer window (face-off, the board, a steal) is 15 seconds.
 - **AI host** (via the Vercel AI Gateway):
-  - writes a fresh survey (questions, ranked answers, points and aliases) for every game, while players are still joining in the lobby
-  - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley", "the snake" is "Basilisk") with a fast decision model
+  - writes a fresh survey (questions at the game's difficulty, ranked answers, points, strict aliases and looser phrasings) for every game, while players are still joining in the lobby
+  - judges fuzzy answers like a real Feud judge ("Ronald" is "Ron Weasley"), as strictly as the difficulty says, with a fast decision model
   - writes every host line fresh, in character, for that moment of that game: greeting players by name as they join, the opening, calling up each face-off and reading the question aloud as it's revealed, reacting to every answer (and saying what's at stake next), and a spoken sign-off recap
   - writes its reaction to every answer on the board a round ahead, with the survey model and time to think, so a found answer gets a sharper line that's already voiced; misses, which depend on what was typed, are written live
   - voices each line a sentence at a time, as soon as it's written: the first sentence plays while the rest are made, and sentences that come up again ("Survey says…", the rules) are voiced once. The TV lets a line finish (or fades it out) rather than cutting the host off mid-word
@@ -118,7 +124,8 @@ src/
   lib/engine.ts           all game rules as pure functions (unit-tested)
   lib/game-service.ts     orchestrates store + engine + AI
   lib/ai.ts               survey writer, answer judge (decision model), host lines, recap, host TTS (AI SDK + Gateway)
-  lib/match.ts            fast local answer matching (aliases, plurals, typos)
+  lib/match.ts            fast local answer matching (aliases, plurals, typos), by difficulty
+  lib/difficulty.ts       what each difficulty accepts
   lib/store/              memory (dev) and Supabase stores
   lib/client/             realtime hook, API client, synthesized audio, speech
   packs/                  question packs: theme (client) + content (server)

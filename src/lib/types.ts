@@ -148,9 +148,13 @@ export interface HostLine {
   cue?: HostCue;
 }
 
+export type Difficulty = "easy" | "medium" | "hard";
+
 export interface GameSettings {
   rounds: number;
   answerSeconds: number;
+  /** how hard the questions are and how strictly answers are judged; rooms from before it existed play medium */
+  difficulty?: Difficulty;
 }
 
 export interface GameState {
@@ -190,7 +194,10 @@ export interface GameState {
 export interface SurveyAnswer {
   text: string;
   points: number;
+  /** other names for exactly this answer (spellings, full or short names): accepted at every difficulty */
   aliases: string[];
+  /** looser ways to get at it (descriptions, categories, "candy shop" for Honeydukes): accepted only on easy */
+  loose?: string[];
 }
 
 export interface SurveyRound {

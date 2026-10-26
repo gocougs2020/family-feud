@@ -1,7 +1,7 @@
 "use client";
 
 import type { Action } from "@/lib/game-service";
-import type { GameState } from "@/lib/types";
+import type { Difficulty, GameState } from "@/lib/types";
 
 export type Role = "host" | "player";
 
@@ -49,7 +49,7 @@ async function request<T>(url: string, init: RequestInit & { token?: string | nu
 
 export type ActionResult = { version: number; state: GameState; now: number };
 
-export function createGame(input: { packId: string; topic?: string; rounds: number }) {
+export function createGame(input: { packId: string; topic?: string; rounds: number; difficulty: Difficulty }) {
   return request<{ code: string; gameId: string; hostToken: string }>("/api/games", {
     method: "POST",
     body: JSON.stringify(input),

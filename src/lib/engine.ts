@@ -27,11 +27,14 @@ export interface EngineCtx {
 export const TIMERS = {
   roundIntro: 9_000,
   /** face-off: type an answer, then buzz to lock it in */
-  buzz: 25_000,
+  buzz: 15_000,
   /** face-off: the second player's reply, once the buzzer's answer is in */
   faceoffReply: 15_000,
   playPass: 15_000,
-  steal: 40_000,
+  /** the other team confers and steals with one answer */
+  steal: 15_000,
+  /** a player's turn at the board while their team plays it */
+  answer: 15_000,
   roundEnd: 12_000,
   /** extra time granted while the guess is read out and judged */
   judging: 15_000,

@@ -10,6 +10,7 @@ import { FeudAudio, type Sfx } from "@/lib/client/audio";
 import { HostVoice } from "@/lib/client/speech";
 import { useGame, useNow } from "@/lib/client/use-game";
 import { useStored } from "@/lib/client/use-stored";
+import { DIFFICULTIES, difficultyOf } from "@/lib/difficulty";
 import { activeDeadline, TIMERS } from "@/lib/engine";
 import type { GameState } from "@/lib/types";
 import { getPackTheme } from "@/packs";
@@ -300,6 +301,7 @@ function TopBar({ state, theme, connected, serverNow }: { state: GameState; them
           <span className={`size-2 rounded-full bg-white ${connected ? "animate-pulse" : "opacity-40"}`} /> LIVE
         </span>
         <span className="font-display text-[clamp(0.9rem,1.3vw,1.4rem)] opacity-90">{theme.name}</span>
+        <span className="rounded-md bg-white/10 px-2 py-0.5 text-sm">{DIFFICULTIES[difficultyOf(state.settings)].label}</span>
         {state.roundIndex >= 0 && state.phase !== "game_over" && (
           <span className="rounded-md bg-white/10 px-2 py-0.5 text-sm">
             Round {state.roundIndex + 1}/{state.settings.rounds}

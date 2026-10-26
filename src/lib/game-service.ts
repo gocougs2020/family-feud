@@ -35,9 +35,10 @@ import {
   type EngineCtx,
 } from "./engine";
 import { estimateSpeechMs, plainText } from "./captions";
+import { DEFAULT_DIFFICULTY, difficultyOf } from "./difficulty";
 import { localMatch } from "./match";
 import { getStore } from "./store";
-import type { GameSecret, GameState, LineBank, RoundState, StoredGame, SurveyRound, TeamIndex, TeamPreset, Turn } from "./types";
+import type { Difficulty, GameSecret, GameState, LineBank, RoundState, StoredGame, SurveyRound, TeamIndex, TeamPreset, Turn } from "./types";
 import { warmVoice, warmVoices } from "./voice";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -263,7 +264,7 @@ function bankedLine(bank: LineBank | null, survey: SurveyRound, round: RoundStat
 
 // ------------------------------------------------------------ create & join
 
-export async function createGame(input: { packId: string; topic?: string; rounds?: number }) {
+export async function createGame(input: { packId: string; topic?: string; rounds?: number; difficulty?: Difficulty }) {
   const store = getStore();
   const theme = getPackTheme(input.packId);
   const topic = theme.customTopic ? input.topic?.trim().slice(0, 60) || undefined : undefined;
@@ -276,7 +277,7 @@ export async function createGame(input: { packId: string; topic?: string; rounds
       code,
       packId: theme.id,
       topic,
-      settings: { rounds, answerSeconds: 30 },
+      settings: { rounds, answerSeconds: TIMERS.answer / 1000, difficulty: input.difficulty ?? DEFAULT_DIFFICULTY },
       teams: pickTeams(theme.id),
       ctx: { now: Date.now(), rng: Math.random, id: makeId, lines: getPackContent(theme.id, topic).lines },
     }));
@@ -330,6 +331,7 @@ export async function prepareSurvey(gameId: string, opts: { forceBuiltIn?: boole
       secret = await writeSurvey({
         pack: getPackContent(state.packId, state.topic),
         rounds: state.settings.rounds,
+        difficulty: difficultyOf(state.settings),
         teams: [state.teams[0].name, state.teams[1].name],
         avoid,
       });
@@ -570,12 +572,13 @@ async function judgeAnswer(id: string, playerId: string, lock: (state: GameState
   const name = state.players.find((p) => p.id === playerId)?.name ?? "A player";
   const moment = describeStakes(state, turn, name);
 
-  let index = localMatch(clean, survey.answers);
+  const difficulty = difficultyOf(state.settings);
+  let index = localMatch(clean, survey.answers, difficulty);
   let quip: string | undefined;
   if (aiEnabled()) {
     if (index == null) {
       try {
-        index = await matchGuess({ round: survey, guess: clean });
+        index = await matchGuess({ round: survey, guess: clean, difficulty });
       } catch (err) {
         console.error("[feud] AI judge failed, treating as a miss:", err);
       }
