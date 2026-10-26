@@ -303,6 +303,10 @@ export function trimLine(text: string, max: number): string {
 // on the board, and they're voiced ahead too: a hit then gets a line that's
 // sharper than one dashed off live, with no wait for the writing or the voice.
 // Misses, which depend on what was typed, are still written live.
+//
+// Round 1's bank is written in the lobby, so it has to land before the first
+// face-off: the survey model thinks only a little, and if it still runs long
+// (or the gateway times out) Haiku writes the set instead.
 
 const bankSchema = z.object({
   answers: z
@@ -331,23 +335,35 @@ function namesAnother(line: string, answers: SurveyRound["answers"], index: numb
   });
 }
 
-/** Write the host's reactions to every answer on one round's board. */
-export async function writeLineBank(input: {
+type BankInput = {
   pack: PackContent;
   round: SurveyRound;
   roundNumber: number;
   rounds: number;
   model?: LanguageModel;
-}): Promise<LineBank> {
+  fallbackModel?: LanguageModel;
+};
+
+/** Write the host's reactions to every answer on one round's board. */
+export async function writeLineBank(input: BankInput): Promise<LineBank> {
+  try {
+    return await bankWith(input, input.model ?? MODEL, "low", 30_000);
+  } catch (err) {
+    console.warn(`[feud] round ${input.roundNumber}'s lines took too long to think through; writing them quickly instead:`, err);
+    return bankWith(input, input.fallbackModel ?? FAST_MODEL, "none", 20_000);
+  }
+}
+
+async function bankWith(input: BankInput, model: LanguageModel, reasoning: "low" | "none", timeout: number): Promise<LineBank> {
   const { round } = input;
   const board = round.answers.map((a, i) => `${i + 1}. ${a.text} (${a.points})`).join("\n");
   const riffs = input.pack.hostRiffs?.length
     ? `Comic angles you can draw on, spread across the set (none more than twice, and plenty of lines need none):\n${input.pack.hostRiffs.map((r) => `- ${r}`).join("\n")}\n\n`
     : "";
   const { output } = await generateText({
-    model: input.model ?? MODEL,
-    reasoning: "medium",
-    timeout: 45_000,
+    model,
+    reasoning,
+    timeout,
     maxRetries: 0,
     instructions: `You write the host's lines for a live Family Feud style game show. Persona: ${input.pack.hostPersona}\n\n${SPOKEN}`,
     output: Output.object({ schema: bankSchema }),
