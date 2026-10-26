@@ -276,8 +276,36 @@ describe("writeLineBank", () => {
       { faceoff: "Harry! Naturally.", play: "The boy who lived, and loves." },
       { faceoff: "Freedom! [gasps] How very noble.", play: "Free at last, and on the board." },
     ]);
-    expect(reasoning).toEqual(["medium"]);
+    expect(reasoning).toEqual(["low"]);
     expect(prompts[0]).toContain("1. Socks (48)");
+  });
+
+  it("has Haiku write the set when the survey model fails", async () => {
+    const reasoning: unknown[] = [];
+    const bank = await writeLineBank({
+      pack: harryPotterContent,
+      round,
+      roundNumber: 1,
+      rounds: 4,
+      model: new MockLanguageModelV4({
+        doGenerate: async () => {
+          throw new Error("The operation was aborted due to timeout");
+        },
+      }),
+      fallbackModel: mockModel(
+        {
+          answers: [
+            { answer: "Socks", faceoff: "Socks! Of course.", play: "Socks again." },
+            { answer: "Harry Potter", faceoff: "Harry!", play: "The boy who lived." },
+            { answer: "Freedom", faceoff: "Freedom!", play: "Free at last." },
+          ],
+        },
+        [],
+        reasoning,
+      ),
+    });
+    expect(reasoning).toEqual(["none"]);
+    expect(bank.hits[0]).toEqual({ faceoff: "Socks! Of course.", play: "Socks again." });
   });
 
   it("drops a line that would give away another answer still on the board", async () => {
