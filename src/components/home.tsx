@@ -188,6 +188,14 @@ export function Home({ status }: { status: { realtime: "supabase" | "local"; ai:
           <span className="rounded-full bg-white/10 px-3 py-1">AI host: {status.ai ? "on (Vercel AI Gateway)" : "off — using built-in questions"}</span>
           <span>Fan-made party game. Not affiliated with Family Feud, Fremantle, or any franchise in the packs.</span>
         </footer>
+        <a
+          href="https://logandziuk.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="-mt-6 self-center text-sm text-ink/60 transition-colors duration-300 hover:text-accent focus-visible:text-accent"
+        >
+          Obsessively crafted by Logan
+        </a>
       </div>
     </main>
   );
